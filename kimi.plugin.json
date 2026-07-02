@@ -1,0 +1,35 @@
+{
+  "name": "customization-control",
+  "version": "0.1.0",
+  "description": "Audit, deduplicate, repair, sync, and manage agent customizations across Kimi Code, Codex, and Claude Code.",
+  "keywords": [
+    "customization",
+    "skills",
+    "plugins",
+    "dedupe",
+    "audit",
+    "sync",
+    "repair",
+    "marketplace",
+    "kimi-code",
+    "codex",
+    "claude-code"
+  ],
+  "author": {
+    "name": "0langa"
+  },
+  "homepage": "https://github.com/0langa/customization-control",
+  "license": "MIT",
+  "interface": {
+    "displayName": "Customization Control",
+    "shortDescription": "Audit, dedupe, repair, and sync agent customizations.",
+    "longDescription": "Cross-provider plugin that inventories, deduplicates, repairs, syncs, and manages agent customizations across Kimi Code, Codex, and Claude Code.",
+    "developerName": "0langa",
+    "websiteURL": "https://github.com/0langa/customization-control"
+  },
+  "skills": "./skills/",
+  "sessionStart": {
+    "skill": "customization-audit"
+  },
+  "skillInstructions": "Use Customization Control when the user asks to audit, dedupe, repair, sync, or manage their agent customizations across providers. Start with customization-audit as the entrypoint, then route to narrower skills as needed."
+}

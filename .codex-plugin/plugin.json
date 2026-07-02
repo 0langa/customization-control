@@ -1,0 +1,46 @@
+{
+  "name": "customization-control",
+  "version": "0.1.0",
+  "description": "Audit, deduplicate, repair, sync, and manage agent customizations across Codex, Claude Code, and Kimi Code.",
+  "author": {
+    "name": "0langa"
+  },
+  "homepage": "https://github.com/0langa/customization-control",
+  "repository": "https://github.com/0langa/customization-control",
+  "license": "MIT",
+  "keywords": [
+    "customization",
+    "skills",
+    "plugins",
+    "dedupe",
+    "audit",
+    "sync",
+    "repair",
+    "marketplace",
+    "codex",
+    "claude-code",
+    "kimi-code"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Customization Control",
+    "shortDescription": "Audit, dedupe, repair, and sync agent customizations.",
+    "longDescription": "Cross-provider plugin that inventories, deduplicates, repairs, syncs, and manages agent customizations across Codex, Claude Code, and Kimi Code. Keeps the @ picker clean and customization roots consistent.",
+    "developerName": "0langa",
+    "category": "Coding",
+    "capabilities": [
+      "Read",
+      "Write",
+      "Planning"
+    ],
+    "websiteURL": "https://github.com/0langa/customization-control",
+    "privacyPolicyURL": "https://github.com/0langa/customization-control/blob/main/README.md",
+    "termsOfServiceURL": "https://github.com/0langa/customization-control/blob/main/README.md",
+    "defaultPrompt": [
+      "Audit my agent customizations.",
+      "Find and remove duplicate skills.",
+      "Sync my skills across providers.",
+      "Repair broken skill symlinks."
+    ]
+  }
+}
