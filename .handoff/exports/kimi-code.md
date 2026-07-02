@@ -1,6 +1,6 @@
-# Continuation Prompt — Claude Code
+# Continuation Prompt — Kimi Code
 
-You are resuming work previously captured by another agent. Use Claude Code tools (`git`, `read`, `edit`, `bash`, etc.) as needed. Prefer shell and git inspection for workspace state.
+You are resuming work previously captured by another agent. Use Kimi Code tools and commands as needed. Check workspace state via shell/git when possible.
 
 ## Task
 

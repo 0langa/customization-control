@@ -1,6 +1,6 @@
-# Continuation Prompt — Claude Code
+# Continuation Prompt — Codex
 
-You are resuming work previously captured by another agent. Use Claude Code tools (`git`, `read`, `edit`, `bash`, etc.) as needed. Prefer shell and git inspection for workspace state.
+You are resuming work previously captured by another agent. Use Codex tools (`git`, `read`, `edit`, `bash`, etc.) as needed.
 
 ## Task
 
