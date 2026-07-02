@@ -90,7 +90,7 @@ function Scan-SkillDir {
             $entry.hash = Get-ContentHash $skillMd
         }
 
-        $pluginJson = Join-Path $skillDir '.claude-plugin' 'plugin.json'
+        $pluginJson = Join-Path (Join-Path $skillDir '.claude-plugin') 'plugin.json'
         if (Test-Path $pluginJson -PathType Leaf) {
             $entry.hasManifest = $true
             $entry.type = 'skill-plugin'
@@ -153,7 +153,7 @@ function Scan-PluginCache {
             $subDir = $_.FullName
             $manifestCandidates = @(
                 (Join-Path $subDir 'plugin.json'),
-                (Join-Path $subDir '.claude-plugin' 'plugin.json'),
+                (Join-Path (Join-Path $subDir '.claude-plugin') 'plugin.json'),
                 (Join-Path $subDir 'SKILL.md')
             )
 

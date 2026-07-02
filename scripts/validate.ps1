@@ -150,7 +150,7 @@ foreach ($item in $inventory) {
 
     # Validate plugin manifest
     if ($item.hasManifest -and $item.type -eq 'skill-plugin') {
-        $pluginJson = Join-Path $item.path '.claude-plugin' 'plugin.json'
+        $pluginJson = Join-Path (Join-Path $item.path '.claude-plugin') 'plugin.json'
         if (Test-Path $pluginJson) {
             $pluginIssues = Test-PluginManifest $pluginJson
             $result.issues += $pluginIssues
