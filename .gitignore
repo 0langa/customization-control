@@ -1,0 +1,7 @@
+# Quarantine directory (local to each machine)
+.customization-control/
+
+# Provider discovery junctions (recreated per-machine)
+.codex/skills/
+.claude/skills/
+.kimi-code/skills/

@@ -1,0 +1,47 @@
+{
+  "description": "Classification and handling policy for duplicate customizations.",
+  "categories": {
+    "canonical": {
+      "description": "Source of truth. Keep unconditionally.",
+      "action": "keep",
+      "safety": "safe"
+    },
+    "provider-link": {
+      "description": "Symlink or junction pointing to canonical folder. Keep or repair if broken.",
+      "action": "keep-or-repair",
+      "safety": "safe"
+    },
+    "duplicate-copy": {
+      "description": "Same content copied to another location. Remove only with dry-run plan and backup.",
+      "action": "quarantine-then-remove",
+      "safety": "requires-backup"
+    },
+    "stale-cache": {
+      "description": "Old generated/cached artifact that can be rebuilt.",
+      "action": "remove-if-rebuildable",
+      "safety": "requires-confirmation"
+    },
+    "conflict": {
+      "description": "Same name but different content across locations. Never auto-delete.",
+      "action": "report-only",
+      "safety": "unsafe-to-auto-resolve"
+    },
+    "broken-link": {
+      "description": "Symlink/junction whose target does not exist.",
+      "action": "remove-or-recreate",
+      "safety": "safe-if-target-known"
+    },
+    "unknown": {
+      "description": "Customization that does not match any known pattern.",
+      "action": "report-only",
+      "safety": "never-auto-delete"
+    }
+  },
+  "rules": [
+    "Never delete unknown or conflicting customizations silently.",
+    "Always produce a dry-run plan before any mutation.",
+    "Quarantine risky removals to a timestamped backup folder before deletion.",
+    "Use content hashing (SHA-256) to distinguish identical from conflicting duplicates.",
+    "Resolve all paths to absolute before comparison."
+  ]
+}

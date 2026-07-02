@@ -1,0 +1,50 @@
+{
+  "description": "Policy for repairing broken customizations.",
+  "safe_repairs": [
+    {
+      "type": "broken-symlink-known-target",
+      "action": "Recreate symlink to canonical location.",
+      "auto": true
+    },
+    {
+      "type": "missing-provider-link",
+      "action": "Create symlink from provider discovery dir to canonical skill.",
+      "auto": true
+    },
+    {
+      "type": "stale-marketplace-entry",
+      "action": "Remove entry from marketplace.json if plugin no longer exists at referenced path.",
+      "auto": false,
+      "requires": "dry-run confirmation"
+    },
+    {
+      "type": "invalid-manifest",
+      "action": "Report invalid fields. Do not auto-fix manifests.",
+      "auto": false
+    }
+  ],
+  "unsafe_repairs": [
+    {
+      "type": "conflicting-duplicate",
+      "action": "Report both versions. User must choose canonical.",
+      "auto": false
+    },
+    {
+      "type": "unknown-customization",
+      "action": "Report only. Never modify.",
+      "auto": false
+    }
+  ],
+  "quarantine": {
+    "directory": ".customization-control/quarantine",
+    "naming": "{timestamp}_{original-name}",
+    "metadata_file": "quarantine-manifest.json",
+    "retention": "User manages manually. Never auto-purge."
+  },
+  "guardrails": [
+    "Every destructive operation must use resolved absolute paths.",
+    "Never delete outside approved roots from known-roots.json.",
+    "Always validate target exists before creating symlinks.",
+    "On Windows, prefer directory junctions for compatibility."
+  ]
+}

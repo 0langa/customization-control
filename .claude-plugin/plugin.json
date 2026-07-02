@@ -1,0 +1,25 @@
+{
+  "name": "customization-control",
+  "displayName": "Customization Control",
+  "version": "0.1.0",
+  "description": "Audit, deduplicate, repair, sync, and manage agent customizations across Codex, Claude Code, and Kimi Code. Keeps the @ picker clean and customization roots consistent.",
+  "author": {
+    "name": "0langa",
+    "url": "https://github.com/0langa"
+  },
+  "repository": "https://github.com/0langa/customization-control",
+  "license": "MIT",
+  "keywords": [
+    "customization",
+    "skills",
+    "plugins",
+    "dedupe",
+    "audit",
+    "sync",
+    "repair",
+    "marketplace",
+    "codex",
+    "kimi-code"
+  ],
+  "skills": "./skills/"
+}

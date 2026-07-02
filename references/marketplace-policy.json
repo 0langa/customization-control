@@ -1,0 +1,17 @@
+{
+  "description": "Policy for managing marketplace entries for already-ported plugins.",
+  "scope": "Manage existing/ported plugin marketplace entries only. Never convert plugin formats.",
+  "operations": {
+    "validate": "Check marketplace.json entries point to real plugin directories with valid manifests.",
+    "remove-stale": "Remove entries whose referenced plugin path no longer exists.",
+    "refresh": "Re-read plugin manifest and update marketplace entry fields.",
+    "verify-unique": "Ensure each plugin appears exactly once in marketplace.json.",
+    "reinstall": "Remove cached copy and re-clone/re-copy from source."
+  },
+  "safety": [
+    "Always back up marketplace.json before modification.",
+    "Validate JSON after every write.",
+    "Never add new plugins to marketplace — only manage existing entries.",
+    "Report but do not auto-fix entries with mismatched versions."
+  ]
+}

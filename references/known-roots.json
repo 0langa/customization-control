@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Known customization roots across providers. Used by inventory and dedupe to discover all skill/plugin/config locations.",
+  "roots": {
+    "claude-code": {
+      "user_skills": "~/.claude/skills",
+      "project_skills": ".claude/skills",
+      "project_commands": ".claude/commands",
+      "settings_user": "~/.claude/settings.json",
+      "settings_project": ".claude/settings.json",
+      "settings_local": ".claude/settings.local.json",
+      "mcp_project": ".mcp.json",
+      "rules": ".claude/rules"
+    },
+    "codex": {
+      "user_skills": "~/.codex/skills",
+      "project_skills": ".codex/skills",
+      "agents_md": "AGENTS.md",
+      "config": "~/.codex/config.toml",
+      "plugins": "~/.codex/plugins",
+      "plugin_cache": "~/.codex/plugins/cache"
+    },
+    "kimi-code": {
+      "project_skills": ".kimi-code/skills",
+      "project_config": ".kimi-code"
+    },
+    "legacy": {
+      "agent_skills": "~/.agents/skills",
+      "agent_plugins": "~/.agents/plugins",
+      "marketplace": "~/.agents/plugins/marketplace.json"
+    }
+  },
+  "windows_home": "%USERPROFILE%",
+  "notes": [
+    "~ expands to %USERPROFILE% on Windows.",
+    "All roots must be resolved to absolute paths before any filesystem operation.",
+    "Roots under legacy/ may contain overlapping copies of skills from other providers."
+  ]
+}
