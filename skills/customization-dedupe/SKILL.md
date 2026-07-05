@@ -45,6 +45,15 @@ Use SHA-256 hash of the primary content file:
 - Plugins: hash of `plugin.json` or `.claude-plugin/plugin.json`
 - Commands: hash of the `.md` file
 
+On WSL, Linux, and macOS, use the cross-platform helper for inventory and planning:
+
+```bash
+python3 "${CLAUDE_SKILL_DIR}/../../../scripts/customization_control.py" inventory --output-format json > inventory.json
+python3 "${CLAUDE_SKILL_DIR}/../../../scripts/customization_control.py" plan-dedupe --inventory-json inventory.json --output-format json > dedupe-plan.json
+```
+
+On Windows, use the PowerShell helpers:
+
 !`powershell -NoProfile -Command "Get-FileHash -Algorithm SHA256 -Path $args[0]" "$ARGUMENTS"`
 
 Identical hashes → `duplicate-copy`. Different hashes → `conflict`.
@@ -69,7 +78,7 @@ For each confirmed removal:
 3. Write entry to `quarantine-manifest.json` with original path, hash, timestamp, reason.
 4. Remove the original.
 
-On Windows, use PowerShell `Copy-Item` and `Remove-Item` with resolved absolute paths. Never use string-built `rm` commands.
+On WSL, Linux, and macOS, use `python3 scripts/customization_control.py apply-dedupe dedupe-plan.json`. On Windows, use PowerShell `Copy-Item` and `Remove-Item` with resolved absolute paths. Never use string-built `rm` commands.
 
 ## Post-removal validation
 

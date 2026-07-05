@@ -29,10 +29,11 @@ After developing and installing skills/plugins across multiple AI coding agents,
 
 ## Scripts
 
-All scripts are PowerShell, support `-OutputFormat json|table`, and are deterministic helpers — the skills contain the decision logic.
+The plugin ships both Windows-native PowerShell helpers and a cross-platform Python helper for WSL, Linux, and macOS. The helpers are deterministic; the skills contain the decision logic.
 
 | Script | Purpose |
 |---|---|
+| `scripts/customization_control.py` | Cross-platform inventory, validation, dedupe plan/apply, and quarantine helper |
 | `scripts/inventory.ps1` | Scan all known roots, produce structured inventory |
 | `scripts/validate.ps1` | Validate symlinks, manifests, path bounds |
 | `scripts/plan-dedupe.ps1` | Generate dry-run deduplication plan |
@@ -45,10 +46,18 @@ All scripts are PowerShell, support `-OutputFormat json|table`, and are determin
 pwsh -NoProfile -File scripts/inventory.ps1 -OutputFormat table
 ```
 
+```bash
+python3 scripts/customization_control.py inventory --output-format table
+```
+
 ### Dry-run dedupe
 
 ```powershell
 pwsh -NoProfile -File scripts/plan-dedupe.ps1 -OutputFormat table
+```
+
+```bash
+python3 scripts/customization_control.py plan-dedupe --output-format table
 ```
 
 ## References
@@ -88,6 +97,10 @@ Requires Pester 5+:
 
 ```powershell
 pwsh -NoProfile -Command "Import-Module Pester -MinimumVersion 5.0; Invoke-Pester -Path tests -Output Detailed"
+```
+
+```bash
+python3 -m unittest discover -s tests -p 'test_*.py'
 ```
 
 ## Dedupe categories

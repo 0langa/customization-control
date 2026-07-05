@@ -28,11 +28,17 @@ You are the entrypoint skill for the customization-control plugin. Your job is t
 
 ## Step 1: Inventory
 
-Run the inventory script to scan all known roots:
+Run the inventory helper to scan all known roots. Use the Python helper on WSL, Linux, and macOS:
+
+```bash
+python3 "${CLAUDE_SKILL_DIR}/../../../scripts/customization_control.py" inventory --output-format json
+```
+
+On Windows, use the PowerShell helper:
 
 !`powershell -NoProfile -File "${CLAUDE_SKILL_DIR}/../../../scripts/inventory.ps1" -OutputFormat json`
 
-If the script is unavailable, perform manual inventory by scanning each root from [known-roots.json](../../references/known-roots.json).
+If the platform-specific helper is unavailable, perform manual inventory by scanning each root from [known-roots.json](../../references/known-roots.json).
 
 ### Roots to scan
 
