@@ -5,3 +5,7 @@
 .codex/skills/
 .claude/skills/
 .kimi-code/skills/
+
+# Python test/runtime cache
+**/__pycache__/
+*.py[cod]
