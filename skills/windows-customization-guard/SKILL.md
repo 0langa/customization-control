@@ -1,7 +1,7 @@
 ---
 name: windows-customization-guard
 description: >
-  Windows-specific safety guardrails for customization operations. Validates
+  Use this skill when applying Windows-specific safety guardrails to customization operations. Validates
   paths, handles junctions vs symlinks, ensures PowerShell-safe operations,
   prevents deletion outside approved roots, and guards against common Windows
   path pitfalls.

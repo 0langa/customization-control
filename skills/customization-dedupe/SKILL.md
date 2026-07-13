@@ -1,7 +1,7 @@
 ---
 name: customization-dedupe
 description: >
-  Deduplicate agent customizations. Identifies identical copies across
+  Use this skill when deduplicating agent customizations. Identifies identical copies across
   overlapping roots (e.g. ~/.codex/skills and ~/.agents/skills), produces a
   dry-run removal plan, quarantines risky removals, and cleans up duplicate
   entries that clutter the @ picker.

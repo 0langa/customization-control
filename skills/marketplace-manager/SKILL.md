@@ -1,7 +1,7 @@
 ---
 name: marketplace-manager
 description: >
-  Manage marketplace entries for already-ported plugins. Validate entries,
+  Use this skill when managing marketplace entries for already-ported plugins. Validate entries,
   remove stale references, refresh metadata, verify uniqueness, and reinstall
   cleanly. Does not convert plugin formats between providers.
 when_to_use: >

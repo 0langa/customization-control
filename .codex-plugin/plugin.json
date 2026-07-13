@@ -1,6 +1,6 @@
 {
   "name": "customization-control",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Audit, deduplicate, repair, sync, and manage agent customizations across Codex, Claude Code, and Kimi Code.",
   "author": {
     "name": "0langa"

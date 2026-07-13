@@ -1,7 +1,7 @@
 ---
 name: customization-sync
 description: >
-  Sync canonical customizations to provider discovery directories. Ensures
+  Use this skill when syncing canonical customizations to provider discovery directories. Ensures
   symlinks from .codex/skills, .claude/skills, and .kimi-code/skills point
   to the correct canonical source. Creates missing links and repairs broken ones.
 when_to_use: >

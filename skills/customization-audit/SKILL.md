@@ -1,7 +1,8 @@
 ---
 name: customization-audit
 description: >
-  Audit agent customizations across Codex, Claude Code, and Kimi Code.
+  Use this skill when auditing agent customizations across Codex, Claude Code,
+  and Kimi Code.
   Inventory all skills, plugins, MCP servers, marketplaces, symlinks, and config
   across every known root. Detect duplicates, broken links, stale caches,
   conflicts, and unknown customizations. Use as the entrypoint — routes to

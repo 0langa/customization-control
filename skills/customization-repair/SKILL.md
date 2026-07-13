@@ -1,7 +1,7 @@
 ---
 name: customization-repair
 description: >
-  Repair broken customizations: fix dead symlinks, invalid manifests, stale
+  Use this skill when repairing broken customizations: fix dead symlinks, invalid manifests, stale
   marketplace entries, and corrupted config. Follows repair-policy.json for
   safe vs unsafe repairs. Always uses dry-run before applying.
 when_to_use: >
