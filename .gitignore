@@ -1,6 +1,9 @@
 # Quarantine directory (local to each machine)
 .customization-control/
 
+# Agent handoffs are local task state and may contain machine-specific paths.
+.handoff/
+
 # Provider discovery junctions (recreated per-machine)
 .codex/skills/
 .claude/skills/
