@@ -8,11 +8,19 @@ description: >
   conflicts, and unknown customizations. Use as the entrypoint — routes to
   customization-dedupe, customization-repair, customization-sync, or
   marketplace-manager when narrower action is needed.
+  Boundary: if the request is ONLY about skills — skill health, duplicates,
+  registration, upstream updates, junction repair, provider visibility — with
+  no plugin/MCP/hook/marketplace/config surface involved, route to the
+  skill-doctor skill instead; it owns the skill layer end-to-end, including
+  repairs.
 when_to_use: >
   Use when the user asks to audit, check, scan, or inventory their agent
   customizations; when the @ picker shows duplicates; when the user wants to
   know what skills/plugins are installed and where; or as a starting point
   before deduplication or repair.
+  Do not use when the task is purely skill-layer work (broken/duplicated/
+  misplaced skills, registering or updating skills, fixing skill links):
+  that belongs to skill-doctor.
 allowed-tools: Bash, Read, Glob, Grep, Skill
 ---
 

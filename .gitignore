@@ -10,5 +10,6 @@
 .kimi-code/skills/
 
 # Python test/runtime cache
+.recall/
 **/__pycache__/
 *.py[cod]

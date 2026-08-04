@@ -89,7 +89,7 @@ claude --add-dir /path/to/customization-control
 
 ### Provider discovery
 
-Junctions in `.codex/skills/`, `.claude/skills/`, and `.kimi-code/skills/` point to the canonical `skills/` directory, so all three providers discover the skills when working in this repo.
+Canonical skills live in `skills/`. Provider discovery links are machine-local, git-ignored state; create or repair them only through the explicit sync workflow. A clone alone does not prove those links exist or that a provider has loaded the plugin.
 
 ## Tests
 
