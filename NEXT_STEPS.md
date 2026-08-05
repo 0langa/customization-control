@@ -4,7 +4,7 @@ _Verified against source on 2026-08-05._
 
 ## Current state
 
-- `v0.1.3` is current source release. Claude, Codex, and Kimi manifests agree on version.
+- `v0.1.4` is current source release. Claude, Codex, and Kimi manifests agree on version.
 - Six canonical skills live under `skills/`, backed by PowerShell and Python helpers plus JSON safety policies in `references/`.
 - Local `.handoff/`, `.recall/`, and provider discovery links are intentionally git-ignored. They are machine state, not release evidence.
 - `customization-audit` routes requests limited to skill health, visibility, registration, or repair to `skill-doctor`; plugin, MCP, hook, marketplace, and configuration surfaces remain in this plugin's scope.

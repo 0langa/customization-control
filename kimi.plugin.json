@@ -1,6 +1,6 @@
 {
   "name": "customization-control",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Audit, deduplicate, repair, sync, and manage agent customizations across Kimi Code, Codex, and Claude Code.",
   "keywords": [
     "customization",
