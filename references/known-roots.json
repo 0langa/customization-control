@@ -4,6 +4,7 @@
   "roots": {
     "claude-code": {
       "user_skills": "~/.claude/skills",
+      "plugin_cache": "~/.claude/plugins/cache",
       "project_skills": ".claude/skills",
       "project_commands": ".claude/commands",
       "settings_user": "~/.claude/settings.json",
@@ -21,6 +22,7 @@
       "plugin_cache": "~/.codex/plugins/cache"
     },
     "kimi-code": {
+      "managed_plugins": "~/.kimi-code/plugins/managed",
       "project_skills": ".kimi-code/skills",
       "project_config": ".kimi-code"
     },

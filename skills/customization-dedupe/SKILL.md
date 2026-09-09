@@ -48,8 +48,8 @@ Use SHA-256 hash of the primary content file:
 On WSL, Linux, and macOS, use the cross-platform helper for inventory and planning:
 
 ```bash
-python3 "${CLAUDE_SKILL_DIR}/../../../scripts/customization_control.py" inventory --output-format json > inventory.json
-python3 "${CLAUDE_SKILL_DIR}/../../../scripts/customization_control.py" plan-dedupe --inventory-json inventory.json --output-format json > dedupe-plan.json
+python3 "${CLAUDE_SKILL_DIR}/../../scripts/customization_control.py" inventory --output-format json > inventory.json
+python3 "${CLAUDE_SKILL_DIR}/../../scripts/customization_control.py" plan-dedupe --inventory-json inventory.json --output-format json > dedupe-plan.json
 ```
 
 On Windows, use the PowerShell helpers:

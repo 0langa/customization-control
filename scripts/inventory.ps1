@@ -133,49 +133,65 @@ function Scan-CommandDir {
     return $results
 }
 
-function Scan-PluginCache {
-    param(
-        [string]$CachePath,
-        [string]$Provider
-    )
-    $results = @()
-    $resolved = Resolve-HomePath $CachePath
-
-    if (-not (Test-Path $resolved -PathType Container)) {
-        return $results
+function New-PluginInventoryEntry {
+    param([string]$PluginPath, [string]$Name, [string]$Provider, [string]$Scope,
+          [string]$Version = '', [string]$Marketplace = '')
+    $providerManifest = switch ($Provider) {
+        'codex' { '.codex-plugin/plugin.json' }
+        'claude-code' { '.claude-plugin/plugin.json' }
+        'kimi-code' { 'kimi.plugin.json' }
+        default { 'plugin.json' }
     }
+    $manifest = @(
+        (Join-Path $PluginPath $providerManifest),
+        (Join-Path $PluginPath 'plugin.json'),
+        (Join-Path $PluginPath 'SKILL.md')
+    ) | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+    if ($Scope -ne 'cache' -and $manifest -and $manifest.EndsWith('.json')) {
+        try {
+            $metadata = Get-Content -LiteralPath $manifest -Raw | ConvertFrom-Json
+            if ($metadata.PSObject.Properties['name']) { $Name = [string]$metadata.name }
+            if ($metadata.PSObject.Properties['version']) { $Version = [string]$metadata.version }
+        } catch { }
+    }
+    $link = Get-LinkTarget $PluginPath
+    return [ordered]@{
+        name = $Name
+        type = if ($Scope -eq 'cache') { 'cached-plugin' } else { 'managed-plugin' }
+        provider = $Provider
+        scope = $Scope
+        path = $PluginPath
+        isLink = $link.IsLink
+        linkTarget = $link.Target
+        linkType = $link.LinkType
+        hash = if ($manifest) { Get-ContentHash $manifest } else { $null }
+        hasManifest = ($null -ne $manifest)
+        version = $Version
+        marketplace = $Marketplace
+    }
+}
 
-    Get-ChildItem -Path $resolved -Directory -ErrorAction SilentlyContinue | ForEach-Object {
-        $pluginDir = $_.FullName
-        $linkInfo = Get-LinkTarget $pluginDir
-
-        Get-ChildItem -Path $pluginDir -Directory -ErrorAction SilentlyContinue | ForEach-Object {
-            $subDir = $_.FullName
-            $manifestCandidates = @(
-                (Join-Path $subDir 'plugin.json'),
-                (Join-Path (Join-Path $subDir '.claude-plugin') 'plugin.json'),
-                (Join-Path $subDir 'SKILL.md')
-            )
-
-            $manifest = $manifestCandidates | Where-Object { Test-Path $_ -PathType Leaf } | Select-Object -First 1
-            $hash = if ($manifest) { Get-ContentHash $manifest } else { $null }
-
-            $results += [ordered]@{
-                name      = $_.Name
-                type      = 'cached-plugin'
-                provider  = $Provider
-                scope     = 'cache'
-                path      = $subDir
-                isLink    = (Get-LinkTarget $subDir).IsLink
-                linkTarget = (Get-LinkTarget $subDir).Target
-                linkType  = (Get-LinkTarget $subDir).LinkType
-                hash      = $hash
-                hasManifest = ($null -ne $manifest)
+function Scan-PluginCache {
+    param([string]$CachePath, [string]$Provider)
+    $resolved = Resolve-HomePath $CachePath
+    if (-not (Test-Path -LiteralPath $resolved -PathType Container)) { return @() }
+    foreach ($marketplace in Get-ChildItem -LiteralPath $resolved -Directory) {
+        foreach ($plugin in Get-ChildItem -LiteralPath $marketplace.FullName -Directory) {
+            foreach ($version in Get-ChildItem -LiteralPath $plugin.FullName -Directory) {
+                New-PluginInventoryEntry -PluginPath $version.FullName -Name $plugin.Name `
+                    -Provider $Provider -Scope 'cache' -Version $version.Name -Marketplace $marketplace.Name
             }
         }
     }
+}
 
-    return $results
+function Scan-ManagedPlugins {
+    param([string]$RootPath, [string]$Provider)
+    $resolved = Resolve-HomePath $RootPath
+    if (-not (Test-Path -LiteralPath $resolved -PathType Container)) { return @() }
+    foreach ($plugin in Get-ChildItem -LiteralPath $resolved -Directory) {
+        New-PluginInventoryEntry -PluginPath $plugin.FullName -Name $plugin.Name -Provider $Provider -Scope 'user'
+    }
 }
 
 function Scan-MarketplaceJson {
@@ -238,6 +254,11 @@ $scanTargets = @(
 
 $cacheTargets = @(
     @{ Path = '~/.codex/plugins/cache'; Provider = 'codex' }
+    @{ Path = '~/.claude/plugins/cache'; Provider = 'claude-code' }
+)
+
+$managedTargets = @(
+    @{ Path = '~/.kimi-code/plugins/managed'; Provider = 'kimi-code' }
 )
 
 $marketplaceTargets = @(
@@ -248,6 +269,7 @@ if ($DryRun) {
     $scanInfo = @{
         skillDirs = $scanTargets | ForEach-Object { Resolve-HomePath $_.Path }
         cacheDirs = $cacheTargets | ForEach-Object { Resolve-HomePath $_.Path }
+        managedDirs = $managedTargets | ForEach-Object { Resolve-HomePath $_.Path }
         marketplaces = $marketplaceTargets | ForEach-Object { Resolve-HomePath $_ }
         additionalRoots = $AdditionalRoots
     }
@@ -276,6 +298,10 @@ foreach ($target in $scanTargets) {
 
 foreach ($target in $cacheTargets) {
     $inventory += Scan-PluginCache -CachePath $target.Path -Provider $target.Provider
+}
+
+foreach ($target in $managedTargets) {
+    $inventory += @(Scan-ManagedPlugins -RootPath $target.Path -Provider $target.Provider)
 }
 
 foreach ($mp in $marketplaceTargets) {

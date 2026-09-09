@@ -118,11 +118,13 @@ python3 -m unittest discover -s tests -p 'test_*.py'
 ## Known roots scanned
 
 - `~/.claude/skills/` — Claude Code personal skills
+- `~/.claude/plugins/cache/` — Claude Code versioned plugin cache
 - `.claude/skills/` — Claude Code project skills
 - `.claude/commands/` — Claude Code legacy commands
 - `~/.codex/skills/` — Codex user skills
 - `.codex/skills/` — Codex project skills
 - `~/.codex/plugins/cache/` — Codex plugin cache
 - `.kimi-code/skills/` — Kimi Code project skills
+- `~/.kimi-code/plugins/managed/` — Kimi Code managed plugins
 - `~/.agents/skills/` — Legacy agent skills
 - `~/.agents/plugins/marketplace.json` — Legacy marketplace

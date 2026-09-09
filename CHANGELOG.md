@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.5 - 2026-09-09
+
+- Scan complete Codex and Claude cache paths through marketplace, plugin, and version directories, including Codex plugin manifests.
+- Include Kimi managed plugins in both PowerShell and Python inventories and dry-run root listings.
+- Correct the audit and dedupe skills' relative paths to their helper scripts.
+
 ## 0.1.4 - 2026-08-05
 
 - Made public-safety and skill-routing assertions run under documented Python unittest discovery.

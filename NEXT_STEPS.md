@@ -1,10 +1,11 @@
 # Customization Control — Current State
 
-_Verified against source on 2026-08-05._
+_Verified against source on 2026-09-09._
 
 ## Current state
 
-- `v0.1.4` is current source release. Claude, Codex, and Kimi manifests agree on version.
+- Version 0.1.5 inventory repair: both helpers recognize versioned Codex/Claude caches and Kimi managed plugins; synthetic layouts exercise the real PowerShell scanner alongside Python.
+- `v0.1.5` is current source release. Claude, Codex, and Kimi manifests agree on version.
 - Six canonical skills live under `skills/`, backed by PowerShell and Python helpers plus JSON safety policies in `references/`.
 - Local `.handoff/`, `.recall/`, and provider discovery links are intentionally git-ignored. They are machine state, not release evidence.
 - `customization-audit` routes requests limited to skill health, visibility, registration, or repair to `skill-doctor`; plugin, MCP, hook, marketplace, and configuration surfaces remain in this plugin's scope.

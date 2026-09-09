@@ -31,7 +31,10 @@ SCAN_TARGETS = [
 
 CACHE_TARGETS = [
     ("~/.codex/plugins/cache", "codex"),
+    ("~/.claude/plugins/cache", "claude-code"),
 ]
+
+MANAGED_TARGETS = [("~/.kimi-code/plugins/managed", "kimi-code")]
 
 MARKETPLACE_TARGETS = [
     "~/.agents/plugins/marketplace.json",
@@ -181,6 +184,10 @@ def scan_plugin_cache(cache_path: str, provider: str) -> list[dict[str, Any]]:
     cache = resolve_path(cache_path)
     if not cache.is_dir():
         return []
+    provider_manifest = {
+        "codex": ".codex-plugin/plugin.json",
+        "claude-code": ".claude-plugin/plugin.json",
+    }.get(provider, "plugin.json")
     results: list[dict[str, Any]] = []
     for marketplace_dir in sorted((p for p in cache.iterdir() if p.is_dir()), key=lambda p: p.name.lower()):
         for plugin_dir in sorted((p for p in marketplace_dir.iterdir() if p.is_dir()), key=lambda p: p.name.lower()):
@@ -189,9 +196,8 @@ def scan_plugin_cache(cache_path: str, provider: str) -> list[dict[str, Any]]:
                     (
                         candidate
                         for candidate in [
+                            version_dir / provider_manifest,
                             version_dir / "plugin.json",
-                            version_dir / ".codex-plugin" / "plugin.json",
-                            version_dir / ".claude-plugin" / "plugin.json",
                             version_dir / "SKILL.md",
                         ]
                         if candidate.is_file()
@@ -210,6 +216,29 @@ def scan_plugin_cache(cache_path: str, provider: str) -> list[dict[str, Any]]:
                         extra={"version": version_dir.name, "marketplace": marketplace_dir.name},
                     )
                 )
+    return results
+
+
+def scan_managed_plugins(root_path: str, provider: str) -> list[dict[str, Any]]:
+    root = resolve_path(root_path)
+    if not root.is_dir():
+        return []
+    results = []
+    for plugin in sorted((p for p in root.iterdir() if p.is_dir()), key=lambda p: p.name.lower()):
+        manifest = plugin / "kimi.plugin.json"
+        metadata = {}
+        if manifest.is_file():
+            try:
+                data = json.loads(manifest.read_text(encoding="utf-8-sig"))
+                if isinstance(data, dict):
+                    metadata = data
+            except (OSError, ValueError):
+                pass
+        results.append(entry(
+            name=metadata.get("name", plugin.name), type_="managed-plugin", provider=provider,
+            scope="user", path=plugin, hash_=file_hash(manifest), has_manifest=manifest.is_file(),
+            extra={"version": metadata.get("version", ""), "marketplace": ""},
+        ))
     return results
 
 
@@ -255,6 +284,8 @@ def build_inventory(additional_roots: list[str] | None = None) -> dict[str, Any]
             inventory.extend(scan_skill_dir(path, provider, scope))
     for path, provider in CACHE_TARGETS:
         inventory.extend(scan_plugin_cache(path, provider))
+    for path, provider in MANAGED_TARGETS:
+        inventory.extend(scan_managed_plugins(path, provider))
     for path in MARKETPLACE_TARGETS:
         inventory.extend(scan_marketplace(path))
     for root in additional_roots or []:
@@ -299,6 +330,7 @@ def inventory_command(args: argparse.Namespace) -> int:
             "skillDirs": [str(resolve_path(path)) for path, _, _, type_ in SCAN_TARGETS if type_ != "commands"],
             "commandDirs": [str(resolve_path(path)) for path, _, _, type_ in SCAN_TARGETS if type_ == "commands"],
             "cacheDirs": [str(resolve_path(path)) for path, _ in CACHE_TARGETS],
+            "managedDirs": [str(resolve_path(path)) for path, _ in MANAGED_TARGETS],
             "marketplaces": [str(resolve_path(path)) for path in MARKETPLACE_TARGETS],
             "additionalRoots": args.additional_root,
         }
