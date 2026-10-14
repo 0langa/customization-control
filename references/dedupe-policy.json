@@ -39,6 +39,7 @@
   },
   "rules": [
     "Never delete unknown or conflicting customizations silently.",
+    "Compare copies only within one scope: a personal copy and a project copy of the same name are never duplicates of each other.",
     "Always produce a dry-run plan before any mutation.",
     "Quarantine risky removals to a timestamped backup folder before deletion.",
     "Use content hashing (SHA-256) to distinguish identical from conflicting duplicates.",

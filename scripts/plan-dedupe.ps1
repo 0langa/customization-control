@@ -155,9 +155,11 @@ function Test-SharesCopy {
     return $false
 }
 
-# Group by name and find duplicates
+# Group by name within each scope and find duplicates. A personal copy and a
+# project copy of the same name are not duplicates of each other: each serves
+# its own scope, so neither may be removed because the other exists.
 # @() keeps one-element results countable under Set-StrictMode -Version Latest.
-$nameGroups = @($inventory | Group-Object -Property name | Where-Object { $_.Count -gt 1 })
+$nameGroups = @($inventory | Group-Object -Property name, scope | Where-Object { $_.Count -gt 1 })
 
 $plan = @()
 $planId = 0
