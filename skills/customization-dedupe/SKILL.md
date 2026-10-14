@@ -54,7 +54,16 @@ python3 "${CLAUDE_SKILL_DIR}/../../scripts/customization_control.py" plan-dedupe
 
 On Windows, use the PowerShell helpers:
 
-!`powershell -NoProfile -Command "Get-FileHash -Algorithm SHA256 -Path $args[0]" "$ARGUMENTS"`
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_SKILL_DIR}/../../scripts/inventory.ps1" -OutputFormat json > inventory.json
+powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_SKILL_DIR}/../../scripts/plan-dedupe.ps1" -InventoryJson inventory.json -OutputFormat json > dedupe-plan.json
+```
+
+To hash one file by hand, pass its resolved absolute path:
+
+```powershell
+Get-FileHash -Algorithm SHA256 -LiteralPath "<absolute path to SKILL.md>"
+```
 
 Identical hashes → `duplicate-copy`. Different hashes → `conflict`.
 
