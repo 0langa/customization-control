@@ -94,6 +94,29 @@ def approved_roots() -> list[Path]:
     ]
 
 
+def path_strictly_in_roots(path: Path, roots: list[Path]) -> bool:
+    resolved = os.path.normcase(str(resolve_path(path)))
+    return path_in_roots(path, roots) and all(resolved != os.path.normcase(str(root)) for root in roots)
+
+
+def is_link_or_junction(path: Path) -> bool:
+    is_junction = getattr(os.path, "isjunction", None)
+    return path.is_symlink() or bool(is_junction and is_junction(path))
+
+
+def read_json(path: Path) -> Any:
+    # utf-8-sig: Windows PowerShell 5.1 writes UTF-8 files with a BOM.
+    return json.loads(path.read_text(encoding="utf-8-sig"))
+
+
+def read_manifest(path: Path) -> list[dict[str, Any]]:
+    if not path.is_file():
+        return []
+    data = read_json(path)
+    # Older PowerShell helpers wrote a one-entry manifest as a bare object.
+    return [data] if isinstance(data, dict) else list(data or [])
+
+
 def file_hash(path: Path) -> str | None:
     if not path.is_file():
         return None
@@ -345,7 +368,7 @@ def inventory_command(args: argparse.Namespace) -> int:
 
 def load_inventory(path_text: str | None) -> list[dict[str, Any]]:
     if path_text:
-        data = json.loads(Path(path_text).read_text(encoding="utf-8"))
+        data = read_json(Path(path_text))
     else:
         data = build_inventory()
     return list(data.get("inventory", []))
@@ -428,7 +451,18 @@ def plan_from_inventory(inventory: list[dict[str, Any]]) -> dict[str, Any]:
                 plan_id += 1
                 plan.append(plan_entry(plan_id, item, "conflict", "SKIP (conflict - different content)", "n/a"))
             continue
-        sorted_items = sorted(items, key=priority)
+        # A copy without a content hash cannot be shown identical to the others,
+        # so it is never canonical and never removed.
+        unhashed: list[dict[str, Any]] = []
+        comparable: list[dict[str, Any]] = []
+        for item in items:
+            (comparable if item.get("hash") or item.get("isLink") else unhashed).append(item)
+        sorted_items = sorted(comparable, key=priority)
+        for item in unhashed:
+            plan_id += 1
+            plan.append(plan_entry(plan_id, item, "unknown", "SKIP (no content hash to compare)", "n/a"))
+        if not sorted_items:
+            continue
         canonical = sorted_items[0]
         plan_id += 1
         plan.append(plan_entry(plan_id, canonical, "provider-link" if canonical.get("isLink") else "canonical", "KEEP (canonical)", "none"))
@@ -480,7 +514,7 @@ def plan_command(args: argparse.Namespace) -> int:
 
 
 def load_plan(path_text: str) -> list[dict[str, Any]]:
-    return list(json.loads(Path(path_text).read_text(encoding="utf-8")).get("plan", []))
+    return list(read_json(Path(path_text)).get("plan", []))
 
 
 def apply_command(args: argparse.Namespace) -> int:
@@ -488,14 +522,18 @@ def apply_command(args: argparse.Namespace) -> int:
     roots = approved_roots()
     quarantine_base = resolve_path(args.quarantine_root)
     manifest_path = quarantine_base / "quarantine-manifest.json"
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.is_file() else []
+    manifest = read_manifest(manifest_path)
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     results = []
     for item in removals:
+        raw_path = Path(item["path"]).expanduser().absolute()
         item_path = resolve_path(item["path"])
         result = {"name": item["name"], "path": str(item_path), "status": "pending", "error": None}
-        if not path_in_roots(item_path, roots):
+        if not path_strictly_in_roots(item_path, roots):
             result.update(status="BLOCKED", error=f"Path outside approved roots: {item_path}")
+        elif is_link_or_junction(raw_path):
+            # resolve() follows links, so removing "the item" would delete the link target.
+            result.update(status="BLOCKED", error=f"Refusing to remove a symlink or junction: {raw_path}")
         elif not item_path.exists() and not item_path.is_symlink():
             result.update(status="skipped", error="Path does not exist")
         elif args.dry_run:
@@ -547,7 +585,7 @@ def apply_command(args: argparse.Namespace) -> int:
 def quarantine_command(args: argparse.Namespace) -> int:
     base = resolve_path(args.quarantine_root)
     manifest_path = base / "quarantine-manifest.json"
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.is_file() else []
+    manifest = read_manifest(manifest_path)
     if args.action == "list":
         payload = {"total": len(manifest), "entries": manifest}
     else:
