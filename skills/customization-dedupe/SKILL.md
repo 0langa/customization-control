@@ -87,7 +87,19 @@ For each confirmed removal:
 3. Write entry to `quarantine-manifest.json` with original path, hash, timestamp, reason.
 4. Remove the original.
 
-On WSL, Linux, and macOS, use `python3 scripts/customization_control.py apply-dedupe dedupe-plan.json`. On Windows, use PowerShell `Copy-Item` and `Remove-Item` with resolved absolute paths. Never use string-built `rm` commands.
+Run the helper only after the user has confirmed the dry-run plan. On WSL, Linux, and macOS:
+
+```bash
+python3 "${CLAUDE_SKILL_DIR}/../../scripts/customization_control.py" apply-dedupe dedupe-plan.json
+```
+
+On Windows (`-Force` skips the helper's interactive prompt, which a non-interactive shell cannot answer):
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_SKILL_DIR}/../../scripts/apply-dedupe.ps1" -PlanJson dedupe-plan.json -Force
+```
+
+Both helpers quarantine before removing, write `quarantine-manifest.json`, and refuse paths outside the approved roots as well as symlinks and junctions. Never use string-built `rm` commands.
 
 ## Post-removal validation
 

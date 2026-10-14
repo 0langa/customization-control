@@ -71,21 +71,23 @@ Policy files in `references/` encode the rules skills follow:
 
 ## Installation
 
-### As a Claude Code plugin (skills-directory plugin)
+### As a Claude Code plugin
 
-The `.claude-plugin/plugin.json` manifest makes this repo discoverable as a skills-directory plugin. Clone it and the skills appear in Claude Code:
+Install it from the 0langa plugin marketplace:
+
+```bash
+claude plugin marketplace add https://github.com/0langa/0langas-plugin-marketplace.git
+claude plugin install customization-control@0langas-plugins
+```
+
+Or load a local clone for one session; the skills then run as `/customization-control:<skill>`:
 
 ```bash
 git clone https://github.com/0langa/customization-control
-cd customization-control
-# Skills auto-discovered from skills/ directory
+claude --plugin-dir ./customization-control
 ```
 
-Or install via `--add-dir`:
-
-```bash
-claude --add-dir /path/to/customization-control
-```
+`--add-dir` is not a substitute: it only loads `.claude/skills/` inside the added directory, not this plugin's `skills/`.
 
 ### Provider discovery
 
@@ -100,8 +102,10 @@ pwsh -NoProfile -Command "Import-Module Pester -MinimumVersion 5.0; Invoke-Peste
 ```
 
 ```bash
-python3 -m unittest discover -s tests -p 'test_*.py'
+python3 -m unittest discover -s tests -p 'test_*.py'   # on Windows: py -3 -m unittest ...
 ```
+
+The unittest suite also drives the PowerShell helpers end to end against a temporary home directory, once per installed host (PowerShell 7 and Windows PowerShell 5.1).
 
 ## Dedupe categories
 
