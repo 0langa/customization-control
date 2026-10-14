@@ -63,18 +63,19 @@ function Get-Priority {
 }
 
 # Group by name and find duplicates
-$nameGroups = $inventory | Group-Object -Property name | Where-Object { $_.Count -gt 1 }
+# @() keeps one-element results countable under Set-StrictMode -Version Latest.
+$nameGroups = @($inventory | Group-Object -Property name | Where-Object { $_.Count -gt 1 })
 
 $plan = @()
 $planId = 0
 
 foreach ($group in $nameGroups) {
     $items = $group.Group
-    $hashes = $items | Where-Object { $_.hash } | Select-Object -ExpandProperty hash -Unique
+    $hashes = @($items | Where-Object { $_.hash } | Select-Object -ExpandProperty hash -Unique)
     $isConflict = ($hashes.Count -gt 1)
 
     if ($isConflict) {
-        # Different content — conflict, report only
+        # Different content - conflict, report only
         foreach ($item in $items) {
             $planId++
             $plan += [ordered]@{
@@ -85,16 +86,37 @@ foreach ($group in $nameGroups) {
                 provider  = $item.provider
                 scope     = $item.scope
                 hash      = $item.hash
-                action    = 'SKIP (conflict — different content)'
+                action    = 'SKIP (conflict - different content)'
                 risk      = 'n/a'
                 isLink    = $item.isLink
             }
         }
     } else {
-        # Same content — pick canonical, mark rest as duplicate-copy
-        $sorted = $items | Sort-Object { Get-Priority $_ }
+        # Same content - pick canonical, mark rest as duplicate-copy.
+        # A copy without a content hash cannot be shown identical to the
+        # others, so it is never canonical and never removed.
+        foreach ($item in @($items | Where-Object { -not $_.hash -and -not $_.isLink })) {
+            $planId++
+            $plan += [ordered]@{
+                id        = $planId
+                name      = $item.name
+                category  = 'unknown'
+                path      = $item.path
+                provider  = $item.provider
+                scope     = $item.scope
+                hash      = $item.hash
+                action    = 'SKIP (no content hash to compare)'
+                risk      = 'n/a'
+                isLink    = $item.isLink
+            }
+        }
+
+        $sorted = @($items | Where-Object { $_.hash -or $_.isLink } | Sort-Object { Get-Priority $_ })
+        if ($sorted.Count -eq 0) {
+            continue
+        }
         $canonical = $sorted[0]
-        $duplicates = $sorted[1..($sorted.Count - 1)]
+        $duplicates = @(if ($sorted.Count -gt 1) { $sorted[1..($sorted.Count - 1)] })
 
         $planId++
         $plan += [ordered]@{
@@ -147,10 +169,10 @@ $planSummary = [ordered]@{
     totalEntries    = $plan.Count
     duplicateGroups = $nameGroups.Count
     actions         = @{
-        keep              = ($plan | Where-Object { $_.action -like 'KEEP*' }).Count
-        quarantineRemove  = ($plan | Where-Object { $_.action -eq 'quarantine+remove' }).Count
-        removeRebuildable = ($plan | Where-Object { $_.action -eq 'remove (rebuildable)' }).Count
-        skipConflict      = ($plan | Where-Object { $_.action -like 'SKIP*' }).Count
+        keep              = @($plan | Where-Object { $_.action -like 'KEEP*' }).Count
+        quarantineRemove  = @($plan | Where-Object { $_.action -eq 'quarantine+remove' }).Count
+        removeRebuildable = @($plan | Where-Object { $_.action -eq 'remove (rebuildable)' }).Count
+        skipConflict      = @($plan | Where-Object { $_.action -like 'SKIP*' }).Count
     }
     isDryRun = $true
 }

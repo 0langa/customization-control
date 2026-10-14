@@ -177,7 +177,7 @@ Describe 'Symlink and Junction Handling' {
             # Test-Path returns false for broken junctions pointing to nonexistent targets
             $false | Should -BeFalse
         } else {
-            # Broken junction — Test-Path returns false, but Get-Item -Force can still see it
+            # Broken junction - Test-Path returns false, but Get-Item -Force can still see it
             $exists = $null -ne (Get-Item $brokenLink -Force -ErrorAction SilentlyContinue)
             # Either way, we've demonstrated the detection pattern
             $true | Should -BeTrue
