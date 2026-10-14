@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.8 - 2026-10-15
+
+- Dedupe now compares copies only within one scope (project, personal, custom or cache). A personal copy such as `~/.claude/skills/<name>` and a project copy of the same name are never duplicates of each other, so dedupe keeps both. Before, the project copy was kept and the personal copy was removed.
+- Upgrade note: apply now removes a copy only when the plan keeps a canonical copy in the same scope. A plan made with 0.1.7 or earlier that relied on a copy in another scope reports `BLOCKED` and removes nothing, so re-run the planner before applying.
+
 ## 0.1.7 - 2026-10-14
 
 - The Windows helpers now work when Windows PowerShell 5.1 is started from a PowerShell 7 session through cmd, bash or an agent. Before, 5.1 picked up PowerShell 7's modules, so inventory failed on `Get-FileHash` and apply blocked every removal.
