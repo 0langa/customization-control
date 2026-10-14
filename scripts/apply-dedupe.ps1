@@ -56,9 +56,118 @@ function Test-InApprovedRoot {
     return $false
 }
 
+function Get-PhysicalPath {
+    # The final location of a path once every symlink, junction and mount point
+    # along it is followed, or $null when it cannot be determined.
+    param([string]$Path)
+    if (-not ('CustomizationControl.PhysicalPath' -as [type])) {
+        try {
+            Add-Type -Namespace CustomizationControl -Name PhysicalPath -MemberDefinition @'
+[System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
+public static extern Microsoft.Win32.SafeHandles.SafeFileHandle CreateFileW(string name, uint access, uint share, System.IntPtr security, uint disposition, uint flags, System.IntPtr template);
+[System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
+public static extern uint GetFinalPathNameByHandleW(Microsoft.Win32.SafeHandles.SafeFileHandle handle, System.Text.StringBuilder buffer, uint size, uint flags);
+'@
+        } catch {
+            return $null
+        }
+    }
+    try {
+        $full = [System.IO.Path]::GetFullPath($Path)
+    } catch {
+        return $null
+    }
+    # 0x80 FILE_READ_ATTRIBUTES, 7 share read/write/delete, 3 OPEN_EXISTING,
+    # 0x02000000 FILE_FLAG_BACKUP_SEMANTICS (needed to open a directory).
+    $handle = [CustomizationControl.PhysicalPath]::CreateFileW($full, 0x80, 7, [System.IntPtr]::Zero, 3, 0x02000000, [System.IntPtr]::Zero)
+    try {
+        if ($handle.IsInvalid) { return $null }
+        $buffer = New-Object System.Text.StringBuilder 32768
+        $length = [CustomizationControl.PhysicalPath]::GetFinalPathNameByHandleW($handle, $buffer, 32768, 0)
+        if ($length -eq 0 -or $length -ge 32768) { return $null }
+        $final = $buffer.ToString()
+        if ($final.StartsWith('\\?\UNC\')) { return '\\' + $final.Substring(8) }
+        if ($final.StartsWith('\\?\')) { return $final.Substring(4) }
+        return $final
+    } finally {
+        $handle.Dispose()
+    }
+}
+
+function Test-PathOverlap {
+    # True when the paths are equal or one lies inside the other.
+    param([string]$First, [string]$Second)
+    $comparison = [System.StringComparison]::OrdinalIgnoreCase
+    $a = $First.TrimEnd('\', '/') + '\'
+    $b = $Second.TrimEnd('\', '/') + '\'
+    return $a.StartsWith($b, $comparison) -or $b.StartsWith($a, $comparison)
+}
+
+function Get-TreeFingerprint {
+    # Relative name and SHA-256 of every file below $Path. Links inside the tree
+    # are listed with their target instead of followed. '' when unreadable.
+    param([string]$Path)
+    try {
+        $top = Get-Item -LiteralPath $Path -Force -ErrorAction Stop
+        if (-not $top.PSIsContainer) {
+            return (Get-FileHash -Algorithm SHA256 -LiteralPath $top.FullName -ErrorAction Stop).Hash
+        }
+        $lines = New-Object System.Collections.Generic.List[string]
+        $pending = New-Object System.Collections.Generic.Stack[string]
+        $pending.Push('')
+        while ($pending.Count -gt 0) {
+            $relative = $pending.Pop()
+            $directory = if ($relative) { Join-Path $top.FullName $relative } else { $top.FullName }
+            foreach ($child in @(Get-ChildItem -LiteralPath $directory -Force -ErrorAction Stop)) {
+                $childRelative = if ($relative) { "$relative\$($child.Name)" } else { $child.Name }
+                if ($child.Attributes -band [System.IO.FileAttributes]::ReparsePoint) {
+                    $lines.Add("L $childRelative $(@($child.Target) -join ';')")
+                } elseif ($child.PSIsContainer) {
+                    $pending.Push($childRelative)
+                } else {
+                    $lines.Add("F $childRelative $((Get-FileHash -Algorithm SHA256 -LiteralPath $child.FullName -ErrorAction Stop).Hash)")
+                }
+            }
+        }
+        $sorted = $lines.ToArray()
+        [System.Array]::Sort($sorted, [System.StringComparer]::Ordinal)
+        return ($sorted -join "`n")
+    } catch {
+        return ''
+    }
+}
+
+function Get-RemovalConflict {
+    # Why removing a plan entry could lose data, or '' for a safe duplicate.
+    # Re-checked here because the plan may be stale or edited: the canonical
+    # copy must still exist, the entry must not be the same physical copy as
+    # anything the plan keeps, and a duplicate-copy must match the canonical
+    # file for file (the plan only compared SKILL.md or plugin.json).
+    param($Item, [string]$ItemPath)
+    $canonical = @($plan | Where-Object { $_.name -eq $Item.name -and $_.action -eq 'KEEP (canonical)' }) | Select-Object -First 1
+    if (-not $canonical) { return 'No KEEP (canonical) entry for this name in the plan' }
+    $canonicalPath = [System.IO.Path]::GetFullPath([string]$canonical.path)
+    if (-not (Test-Path -LiteralPath $canonicalPath)) { return "Canonical copy is missing: $canonicalPath" }
+    $mine = Get-PhysicalPath $ItemPath
+    if (-not $mine) { return "Cannot resolve the physical path of $ItemPath" }
+    foreach ($kept in @($plan | Where-Object { $_.action -like 'KEEP*' })) {
+        $theirs = Get-PhysicalPath ([string]$kept.path)
+        if ($theirs -and (Test-PathOverlap $mine $theirs)) {
+            return "Same physical copy as kept entry $($kept.path)"
+        }
+    }
+    if ($Item.action -eq 'quarantine+remove') {
+        $fingerprint = Get-TreeFingerprint $ItemPath
+        if (-not $fingerprint -or $fingerprint -cne (Get-TreeFingerprint $canonicalPath)) {
+            return "Content differs from the canonical copy $canonicalPath"
+        }
+    }
+    return ''
+}
+
 # Load plan
 $planData = Get-Content -Raw -LiteralPath $PlanJson | ConvertFrom-Json
-$plan = $planData.plan
+$plan = @($planData.plan | Where-Object { $null -ne $_ })
 
 # Filter to actionable items. @() keeps a single match countable under
 # Set-StrictMode -Version Latest.
@@ -140,6 +249,14 @@ foreach ($item in $removals) {
         continue
     }
 
+    $conflict = Get-RemovalConflict $item $itemPath
+    if ($conflict) {
+        $result.status = 'BLOCKED'
+        $result.error = $conflict
+        $results += $result
+        continue
+    }
+
     if ($DryRun) {
         $result.status = 'dry-run'
         $results += $result
@@ -147,8 +264,13 @@ foreach ($item in $removals) {
     }
 
     try {
-        # Quarantine
+        # Quarantine. Copies of one name share the timestamp; give each its own folder.
         $quarantineDest = Join-Path $quarantineBase "${timestamp}_$($item.name)"
+        $suffix = 2
+        while (Test-Path -LiteralPath $quarantineDest) {
+            $quarantineDest = Join-Path $quarantineBase "${timestamp}_$($item.name)-$suffix"
+            $suffix++
+        }
         if (-not (Test-Path -LiteralPath $quarantineBase)) {
             New-Item -Path $quarantineBase -ItemType Directory -Force | Out-Null
         }

@@ -137,6 +137,48 @@ class PowerShellHelperTests(SandboxMixin, unittest.TestCase):
                 plan = self.ps_json(exe, "plan-dedupe.ps1", "-InventoryJson", str(inventory_path), cwd=project, env=env)
                 assert_hashless_plan(self, plan)
 
+    def ps_dedupe(self, exe: str, home: Path, cwd: Path, env: dict[str, str]) -> tuple[dict, str]:
+        inventory_path = home / "inventory.json"
+        inventory_path.write_text(self.ps(exe, "inventory.ps1", "-OutputFormat", "json", cwd=cwd, env=env), encoding="utf-8")
+        plan = self.ps_json(exe, "plan-dedupe.ps1", "-InventoryJson", str(inventory_path), cwd=cwd, env=env)
+        plan_path = home / "plan.json"
+        plan_path.write_text(json.dumps(plan), encoding="utf-8")
+        applied = self.ps(exe, "apply-dedupe.ps1", "-PlanJson", str(plan_path), "-QuarantineRoot", str(home / "q"), "-Force", cwd=cwd, env=env)
+        return plan, applied
+
+    def test_dedupe_keeps_copies_that_are_one_physical_folder(self) -> None:
+        for exe in POWERSHELLS:
+            for name, setup in ALIAS_SCENARIOS.items():
+                with self.subTest(powershell=exe, scenario=name):
+                    home, project, env = self.make_home()
+                    precious, cwd = setup(self, home, project)
+                    plan, _ = self.ps_dedupe(exe, home, cwd, env)
+                    self.assertEqual(plan["summary"]["actions"]["quarantineRemove"], 0, plan["plan"])
+                    self.assertTrue(precious.is_file())
+
+    def test_apply_rechecks_a_stale_plan_before_removing(self) -> None:
+        for exe in POWERSHELLS:
+            with self.subTest(powershell=exe):
+                home, project, env = self.make_home()
+                plan_path, survivors = stale_plan(self, home)
+                applied = self.ps_json(
+                    exe, "apply-dedupe.ps1", "-PlanJson", str(plan_path), "-QuarantineRoot", str(home / "q"), "-Force",
+                    cwd=project, env=env,
+                )
+                assert_stale_plan_blocked(self, applied, survivors)
+
+    def test_each_quarantined_copy_gets_its_own_folder(self) -> None:
+        for exe in POWERSHELLS:
+            with self.subTest(powershell=exe):
+                home, project, env = self.make_home()
+                copies = [self.add_skill(home, f"{root}/skills/demo") for root in (".claude", ".codex", ".agents")]
+                plan, _ = self.ps_dedupe(exe, home, project, env)
+                self.assertEqual(plan["summary"]["actions"]["quarantineRemove"], 2)
+                quarantine = home / "q"
+                for _ in range(2):
+                    self.ps(exe, "quarantine.ps1", "-Action", "restore", "-Name", "demo", "-QuarantineRoot", str(quarantine), cwd=project, env=env)
+                assert_restored_copies(self, copies)
+
 
 class PythonHelperParityTests(SandboxMixin, unittest.TestCase):
     def run_helper(self, *args: str, env: dict[str, str], cwd: Path) -> dict:
@@ -168,6 +210,57 @@ class PythonHelperParityTests(SandboxMixin, unittest.TestCase):
         self.assertTrue((sibling / "SKILL.md").is_file())
         self.assertTrue((home / ".claude").is_dir())
 
+    def py_dedupe(self, home: Path, cwd: Path, env: dict[str, str]) -> dict:
+        inventory_path = home / "inventory.json"
+        inventory_path.write_text(json.dumps(self.run_helper("inventory", env=env, cwd=cwd)), encoding="utf-8")
+        plan = self.run_helper("plan-dedupe", "--inventory-json", str(inventory_path), env=env, cwd=cwd)
+        plan_path = home / "plan.json"
+        plan_path.write_text(json.dumps(plan), encoding="utf-8")
+        self.run_helper("apply-dedupe", str(plan_path), "--quarantine-root", str(home / "q"), env=env, cwd=cwd)
+        return plan
+
+    def test_dedupe_keeps_copies_that_are_one_physical_folder(self) -> None:
+        for name, setup in ALIAS_SCENARIOS.items():
+            with self.subTest(scenario=name):
+                home, project, env = self.make_home()
+                precious, cwd = setup(self, home, project)
+                plan = self.py_dedupe(home, cwd, env)
+                self.assertEqual(plan["summary"]["actions"]["quarantineRemove"], 0, plan["plan"])
+                self.assertTrue(precious.is_file())
+
+    def test_apply_rechecks_a_stale_plan_before_removing(self) -> None:
+        home, project, env = self.make_home()
+        plan_path, survivors = stale_plan(self, home)
+        applied = self.run_helper("apply-dedupe", str(plan_path), "--quarantine-root", str(home / "q"), env=env, cwd=project)
+        assert_stale_plan_blocked(self, applied, survivors)
+
+    def test_each_quarantined_copy_gets_its_own_folder(self) -> None:
+        home, project, env = self.make_home()
+        copies = [self.add_skill(home, f"{root}/skills/demo") for root in (".claude", ".codex", ".agents")]
+        plan = self.py_dedupe(home, project, env)
+        self.assertEqual(plan["summary"]["actions"]["quarantineRemove"], 2)
+        for _ in range(2):
+            self.run_helper("quarantine", "restore", "--name", "demo", "--quarantine-root", str(home / "q"), env=env, cwd=project)
+        assert_restored_copies(self, copies)
+
+    def test_junctions_are_detected_without_os_path_isjunction(self) -> None:
+        # os.path.isjunction only exists on Python 3.12+.
+        home, _, _ = self.make_home()
+        target = self.add_skill(home, "elsewhere/demo")
+        junction = home / "link"
+        if not make_junction(junction, target):
+            self.skipTest("cannot create a junction here")
+        import importlib.util
+        from unittest import mock
+
+        spec = importlib.util.spec_from_file_location("customization_control_under_test", SCRIPTS / "customization_control.py")
+        assert spec and spec.loader
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        with mock.patch.object(module.os.path, "isjunction", None, create=True):
+            self.assertTrue(module.is_link_or_junction(junction))
+        self.assertFalse(module.is_link_or_junction(target))
+
     def test_quarantine_reads_bom_and_single_object_manifests(self) -> None:
         home, project, env = self.make_home()
         quarantine = home / "q"
@@ -193,6 +286,86 @@ class ScriptHygieneTests(unittest.TestCase):
                 text = skill.read_text(encoding="utf-8")
                 self.assertIsNone(re.search(r"(^|\s)!`", text))
                 self.assertNotIn("```!", text)
+
+
+def make_junction(link: Path, target: Path) -> bool:
+    if os.name != "nt":
+        return False
+    link.parent.mkdir(parents=True, exist_ok=True)
+    return subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(target)], capture_output=True).returncode == 0
+
+
+def alias_link_to_real_copy(case: SandboxMixin, home: Path, project: Path) -> tuple[Path, Path]:
+    # ~/.claude/skills/demo is a junction to the only real copy in ~/.agents.
+    real = case.add_skill(home, ".agents/skills/demo")
+    if not make_junction(home / ".claude/skills/demo", real):
+        case.skipTest("cannot create a junction here")
+    return real / "SKILL.md", project
+
+
+def alias_linked_parent_folder(case: SandboxMixin, home: Path, project: Path) -> tuple[Path, Path]:
+    # ~/.codex/skills as a whole is a junction to ~/.claude/skills.
+    real = case.add_skill(home, ".claude/skills/demo")
+    if not make_junction(home / ".codex/skills", home / ".claude/skills"):
+        case.skipTest("cannot create a junction here")
+    return real / "SKILL.md", project
+
+
+def alias_run_from_home(case: SandboxMixin, home: Path, project: Path) -> tuple[Path, Path]:
+    # From the home directory the project root .claude/skills is ~/.claude/skills.
+    real = case.add_skill(home, ".claude/skills/demo")
+    return real / "SKILL.md", home
+
+
+ALIAS_SCENARIOS = {
+    "link to the real copy": alias_link_to_real_copy,
+    "linked parent folder": alias_linked_parent_folder,
+    "run from home": alias_run_from_home,
+}
+
+
+def stale_plan(case: SandboxMixin, home: Path) -> tuple[Path, list[Path]]:
+    """A plan that is out of date or edited; apply must refuse every removal."""
+
+    def entry(name: str, path: Path, action: str) -> dict:
+        return {"id": 0, "name": name, "category": "x", "path": str(path), "provider": "legacy", "scope": "user",
+                "hash": "A", "action": action, "risk": "low", "isLink": False}
+
+    plan = []
+    survivors = []
+    linked = case.add_skill(home, ".agents/skills/linked")
+    if make_junction(home / ".claude/skills/linked", linked):
+        # The canonical is a link to the copy the plan wants removed.
+        plan += [entry("linked", home / ".claude/skills/linked", "KEEP (canonical)"),
+                 entry("linked", linked, "quarantine+remove")]
+        survivors.append(linked / "SKILL.md")
+    orphan = case.add_skill(home, ".agents/skills/orphan")
+    plan.append(entry("orphan", orphan, "quarantine+remove"))
+    gone = case.add_skill(home, ".agents/skills/gone")
+    plan += [entry("gone", home / ".claude/skills/gone", "KEEP (canonical)"), entry("gone", gone, "quarantine+remove")]
+    # Same SKILL.md, but the copy to remove has its own edits to a script.
+    canonical = case.add_skill(home, ".claude/skills/edited")
+    edited = case.add_skill(home, ".agents/skills/edited")
+    for folder, text in ((canonical, "print(1)\n"), (edited, "print(2)\n")):
+        (folder / "scripts").mkdir()
+        (folder / "scripts" / "a.py").write_text(text, encoding="utf-8")
+    plan += [entry("edited", canonical, "KEEP (canonical)"), entry("edited", edited, "quarantine+remove")]
+    survivors += [orphan / "SKILL.md", gone / "SKILL.md", edited / "scripts" / "a.py"]
+    plan_path = home / "stale-plan.json"
+    plan_path.write_text(json.dumps({"plan": plan}), encoding="utf-8")
+    return plan_path, survivors
+
+
+def assert_stale_plan_blocked(case: unittest.TestCase, applied: dict, survivors: list[Path]) -> None:
+    case.assertEqual(applied["summary"]["removed"], 0, applied["results"])
+    case.assertEqual(applied["summary"]["blocked"], len(survivors), applied["results"])
+    for path in survivors:
+        case.assertTrue(path.is_file(), path)
+
+
+def assert_restored_copies(case: unittest.TestCase, copies: list[Path]) -> None:
+    for copy in copies:
+        case.assertEqual(sorted(child.name for child in copy.iterdir()), ["SKILL.md"], copy)
 
 
 def hashless_inventory() -> dict:

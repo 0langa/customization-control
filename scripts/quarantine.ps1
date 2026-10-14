@@ -91,7 +91,9 @@ switch ($Action) {
         Write-Host "Restored '$Name' to $($entry.originalPath)"
 
         # Remove from manifest
-        $manifest = @($manifest | Where-Object { $_.name -ne $Name -or $_.timestamp -ne $entry.timestamp })
+        # Copies of one name quarantined in the same run share the timestamp, so
+        # match the entry by its own quarantine folder.
+        $manifest = @($manifest | Where-Object { $_.quarantinePath -ne $entry.quarantinePath })
         ConvertTo-Json -InputObject @($manifest) -Depth 10 | Set-Content -LiteralPath $manifestPath -Encoding UTF8
 
         # Clean quarantine copy
@@ -115,7 +117,9 @@ switch ($Action) {
             Remove-Item -LiteralPath $entry.quarantinePath -Recurse -Force
         }
 
-        $manifest = @($manifest | Where-Object { $_.name -ne $Name -or $_.timestamp -ne $entry.timestamp })
+        # Copies of one name quarantined in the same run share the timestamp, so
+        # match the entry by its own quarantine folder.
+        $manifest = @($manifest | Where-Object { $_.quarantinePath -ne $entry.quarantinePath })
         ConvertTo-Json -InputObject @($manifest) -Depth 10 | Set-Content -LiteralPath $manifestPath -Encoding UTF8
 
         Write-Host "Purged '$Name' from quarantine."
