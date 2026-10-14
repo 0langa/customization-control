@@ -61,45 +61,63 @@ class PowerShellHelperTests(SandboxMixin, unittest.TestCase):
     def test_dedupe_round_trip_with_a_single_duplicate(self) -> None:
         for exe in POWERSHELLS:
             with self.subTest(powershell=exe):
-                home, project, env = self.make_home()
-                self.add_skill(home, ".claude/skills/demo")
-                duplicate = self.add_skill(home, ".agents/skills/demo")
+                self.dedupe_round_trip(exe)
 
-                inventory = self.ps(exe, "inventory.ps1", "-OutputFormat", "json", cwd=project, env=env)
-                inventory_path = home / "inventory.json"
-                inventory_path.write_text(inventory, encoding="utf-8")
+    def test_windows_powershell_ignores_powershell_7_module_paths(self) -> None:
+        # Started from PowerShell 7 through cmd, bash or an agent (pwsh resets the
+        # path only for a powershell.exe it starts itself), Windows PowerShell 5.1
+        # inherits PowerShell 7's module folders. Autoload then loads PowerShell 7's
+        # core modules, Get-FileHash goes missing, inventory fails and apply blocks.
+        windows_powershell = shutil.which("powershell") if os.name == "nt" else None
+        if not windows_powershell:
+            self.skipTest("Windows PowerShell 5.1 is not installed")
+        module_path = powershell7_module_path()
+        if not module_path:
+            self.skipTest("PowerShell 7 is not installed")
+        self.dedupe_round_trip(windows_powershell, module_path=module_path)
 
-                validation = self.ps_json(exe, "validate.ps1", "-InventoryJson", str(inventory_path), cwd=project, env=env)
-                self.assertEqual(validation["summary"]["valid"], 2)
-                self.assertEqual(validation["summary"]["byStatus"], {"valid": 2})
+    def dedupe_round_trip(self, exe: str, module_path: str | None = None) -> None:
+        home, project, env = self.make_home()
+        if module_path is not None:
+            env = with_module_path(env, module_path)
+        self.add_skill(home, ".claude/skills/demo")
+        duplicate = self.add_skill(home, ".agents/skills/demo")
 
-                plan = self.ps_json(exe, "plan-dedupe.ps1", "-InventoryJson", str(inventory_path), cwd=project, env=env)
-                self.assertEqual(plan["summary"]["duplicateGroups"], 1)
-                self.assertEqual(plan["summary"]["actions"]["keep"], 1)
-                self.assertEqual(plan["summary"]["actions"]["quarantineRemove"], 1)
-                plan_path = home / "plan.json"
-                plan_path.write_text(json.dumps(plan), encoding="utf-8")
+        inventory = self.ps(exe, "inventory.ps1", "-OutputFormat", "json", cwd=project, env=env)
+        inventory_path = home / "inventory.json"
+        inventory_path.write_text(inventory, encoding="utf-8")
 
-                quarantine = home / ".customization-control" / "quarantine"
-                applied = self.ps_json(
-                    exe, "apply-dedupe.ps1", "-PlanJson", str(plan_path), "-QuarantineRoot", str(quarantine), "-Force",
-                    cwd=project, env=env,
-                )
-                self.assertEqual(applied["summary"], {"removed": 1, "blocked": 0, "skipped": 0, "errors": 0})
-                self.assertFalse(duplicate.exists())
-                self.assertTrue((home / ".claude/skills/demo/SKILL.md").is_file())
+        validation = self.ps_json(exe, "validate.ps1", "-InventoryJson", str(inventory_path), cwd=project, env=env)
+        self.assertEqual(validation["summary"]["valid"], 2)
+        self.assertEqual(validation["summary"]["byStatus"], {"valid": 2})
 
-                manifest = json.loads((quarantine / "quarantine-manifest.json").read_text(encoding="utf-8-sig"))
-                self.assertIsInstance(manifest, list)
-                self.assertEqual(len(manifest), 1)
+        plan = self.ps_json(exe, "plan-dedupe.ps1", "-InventoryJson", str(inventory_path), cwd=project, env=env)
+        self.assertEqual(plan["summary"]["duplicateGroups"], 1)
+        self.assertEqual(plan["summary"]["actions"]["keep"], 1)
+        self.assertEqual(plan["summary"]["actions"]["quarantineRemove"], 1)
+        plan_path = home / "plan.json"
+        plan_path.write_text(json.dumps(plan), encoding="utf-8")
 
-                listed = self.ps_json(exe, "quarantine.ps1", "-Action", "list", "-QuarantineRoot", str(quarantine), cwd=project, env=env)
-                self.assertEqual(listed["total"], 1)
+        quarantine = home / ".customization-control" / "quarantine"
+        applied = self.ps_json(
+            exe, "apply-dedupe.ps1", "-PlanJson", str(plan_path), "-QuarantineRoot", str(quarantine), "-Force",
+            cwd=project, env=env,
+        )
+        self.assertEqual(applied["summary"], {"removed": 1, "blocked": 0, "skipped": 0, "errors": 0})
+        self.assertFalse(duplicate.exists())
+        self.assertTrue((home / ".claude/skills/demo/SKILL.md").is_file())
 
-                self.ps(exe, "quarantine.ps1", "-Action", "restore", "-Name", "demo", "-QuarantineRoot", str(quarantine), cwd=project, env=env)
-                self.assertTrue((duplicate / "SKILL.md").is_file())
-                remaining = json.loads((quarantine / "quarantine-manifest.json").read_text(encoding="utf-8-sig"))
-                self.assertEqual(remaining, [])
+        manifest = json.loads((quarantine / "quarantine-manifest.json").read_text(encoding="utf-8-sig"))
+        self.assertIsInstance(manifest, list)
+        self.assertEqual(len(manifest), 1)
+
+        listed = self.ps_json(exe, "quarantine.ps1", "-Action", "list", "-QuarantineRoot", str(quarantine), cwd=project, env=env)
+        self.assertEqual(listed["total"], 1)
+
+        self.ps(exe, "quarantine.ps1", "-Action", "restore", "-Name", "demo", "-QuarantineRoot", str(quarantine), cwd=project, env=env)
+        self.assertTrue((duplicate / "SKILL.md").is_file())
+        remaining = json.loads((quarantine / "quarantine-manifest.json").read_text(encoding="utf-8-sig"))
+        self.assertEqual(remaining, [])
 
     def test_apply_blocks_sibling_prefixes_roots_and_links(self) -> None:
         for exe in POWERSHELLS:
@@ -286,6 +304,86 @@ class ScriptHygieneTests(unittest.TestCase):
                 text = skill.read_text(encoding="utf-8")
                 self.assertIsNone(re.search(r"(^|\s)!`", text))
                 self.assertNotIn("```!", text)
+
+
+class ModulePathGuardTests(SandboxMixin, unittest.TestCase):
+    """Each helper first drops PowerShell 7's module folders under Windows PowerShell."""
+
+    POWERSHELL_7_FOLDERS = [
+        r"C:\Users\me\Documents\PowerShell\Modules",
+        r"C:\Program Files\PowerShell\Modules",
+        r"C:\Program Files\PowerShell\7\Modules",
+        r"C:\Program Files\WindowsApps\Microsoft.PowerShell_7.6.6.0_x64__8wekyb3d8bbwe\Modules",
+    ]
+    OTHER_FOLDERS = [
+        r"C:\Users\me\Documents\WindowsPowerShell\Modules",
+        r"C:\Program Files\WindowsPowerShell\Modules",
+        r"C:\Windows\system32\WindowsPowerShell\v1.0\Modules",
+        r"D:\Modules",
+    ]
+
+    def test_every_helper_runs_the_same_guard_first(self) -> None:
+        # First thing after the param block, before any cmdlet can autoload a module.
+        guard = module_path_guard(SCRIPTS / "inventory.ps1")
+        self.assertIn("$PSVersionTable.PSEdition -eq 'Desktop'", guard)
+        for script in sorted(SCRIPTS.glob("*.ps1")):
+            with self.subTest(script=script.name):
+                self.assertEqual(module_path_guard(script), guard)
+
+    def test_guard_drops_only_powershell_7_folders_and_only_under_windows_powershell(self) -> None:
+        if not POWERSHELLS:
+            self.skipTest("PowerShell is not installed")
+        home, _, env = self.make_home()
+        script = home / "guard.ps1"
+        script.write_text(
+            "$PSVersionTable.PSEdition\n$env:PSModulePath\n"
+            + module_path_guard(SCRIPTS / "inventory.ps1")
+            + "$env:PSModulePath\n",
+            encoding="ascii",
+        )
+        folders = [folder for pair in zip(self.POWERSHELL_7_FOLDERS, self.OTHER_FOLDERS) for folder in pair]
+        env = with_module_path(env, ";".join(folders))
+        for exe in POWERSHELLS:
+            with self.subTest(powershell=exe):
+                completed = subprocess.run(
+                    [exe, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", str(script)],
+                    env=env, capture_output=True, text=True, timeout=120,
+                )
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                edition, before, after = completed.stdout.splitlines()
+                before, after = before.split(";"), after.split(";")
+                self.assertEqual(set(folders) - set(before), set(), before)
+                if edition == "Desktop":
+                    self.assertEqual(after, [folder for folder in before if folder not in self.POWERSHELL_7_FOLDERS])
+                else:
+                    self.assertEqual(after, before)
+
+
+def powershell7_module_path() -> str:
+    """PSModulePath inside PowerShell 7, as the programs it starts inherit it."""
+    pwsh = shutil.which("pwsh")
+    if not pwsh:
+        return ""
+    completed = subprocess.run(
+        [pwsh, "-NoProfile", "-NonInteractive", "-Command", "$env:PSModulePath"],
+        capture_output=True, text=True, timeout=120,
+    )
+    return completed.stdout.strip()
+
+
+def with_module_path(env: dict[str, str], module_path: str) -> dict[str, str]:
+    # os.environ upper-cases names on Windows: replace the variable rather than
+    # adding a second spelling of it that the child may or may not see.
+    env = {key: value for key, value in env.items() if key.upper() != "PSMODULEPATH"}
+    env["PSModulePath"] = module_path
+    return env
+
+
+def module_path_guard(script: Path) -> str:
+    """The block right after a helper's param block, through its closing brace."""
+    text = script.read_text(encoding="ascii")
+    start = text.index("\n)\n\n") + len("\n)\n\n")
+    return text[start:text.index("\n}\n", start) + len("\n}\n")]
 
 
 def make_junction(link: Path, target: Path) -> bool:
