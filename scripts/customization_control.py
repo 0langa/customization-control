@@ -500,9 +500,12 @@ def priority(item: dict[str, Any]) -> int:
 
 
 def plan_from_inventory(inventory: list[dict[str, Any]]) -> dict[str, Any]:
-    by_name: dict[str, list[dict[str, Any]]] = {}
+    # Copies are compared only within one scope. A personal copy and a project
+    # copy of the same name are not duplicates of each other: each serves its
+    # own scope, so neither may be removed because the other exists.
+    by_name: dict[tuple[str, str], list[dict[str, Any]]] = {}
     for item in inventory:
-        by_name.setdefault(item["name"], []).append(item)
+        by_name.setdefault((item["name"], str(item.get("scope") or "")), []).append(item)
     # Entries that resolve to the same place (a link and its target, a path
     # through a linked parent folder, or a project root that is the user root
     # because the helper runs from home) are one copy: removing either deletes both.
@@ -603,13 +606,23 @@ def removal_conflict(item: dict[str, Any], plan: list[dict[str, Any]]) -> str | 
     """Why removing a plan entry could lose data, or None for a safe duplicate.
 
     Re-checked at apply time because the plan may be stale or edited: the
-    canonical copy must still exist, the entry must not be the same physical
-    copy as anything the plan keeps, and a duplicate-copy must match the
-    canonical file for file (the plan only compared SKILL.md or plugin.json).
+    canonical copy must be in the entry's own scope and still exist, the entry
+    must not be the same physical copy as anything the plan keeps, and a
+    duplicate-copy must match the canonical file for file (the plan only
+    compared SKILL.md or plugin.json).
     """
-    canonical = next((entry for entry in plan if entry.get("name") == item["name"] and entry.get("action") == "KEEP (canonical)"), None)
+    canonical = next(
+        (
+            entry
+            for entry in plan
+            if entry.get("name") == item["name"]
+            and entry.get("scope") == item.get("scope")
+            and entry.get("action") == "KEEP (canonical)"
+        ),
+        None,
+    )
     if canonical is None:
-        return "No KEEP (canonical) entry for this name in the plan"
+        return "No KEEP (canonical) entry for this name in the same scope"
     canonical_path = Path(str(canonical["path"])).expanduser()
     if not canonical_path.exists():
         return f"Canonical copy is missing: {canonical['path']}"

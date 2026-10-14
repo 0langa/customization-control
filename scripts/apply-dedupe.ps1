@@ -154,12 +154,15 @@ function Get-TreeFingerprint {
 function Get-RemovalConflict {
     # Why removing a plan entry could lose data, or '' for a safe duplicate.
     # Re-checked here because the plan may be stale or edited: the canonical
-    # copy must still exist, the entry must not be the same physical copy as
-    # anything the plan keeps, and a duplicate-copy must match the canonical
-    # file for file (the plan only compared SKILL.md or plugin.json).
+    # copy must be in the entry's own scope and still exist, the entry must not
+    # be the same physical copy as anything the plan keeps, and a duplicate-copy
+    # must match the canonical file for file (the plan only compared SKILL.md
+    # or plugin.json).
     param($Item, [string]$ItemPath)
-    $canonical = @($plan | Where-Object { $_.name -eq $Item.name -and $_.action -eq 'KEEP (canonical)' }) | Select-Object -First 1
-    if (-not $canonical) { return 'No KEEP (canonical) entry for this name in the plan' }
+    $canonical = @($plan | Where-Object {
+        $_.name -eq $Item.name -and $_.scope -eq $Item.scope -and $_.action -eq 'KEEP (canonical)'
+    }) | Select-Object -First 1
+    if (-not $canonical) { return 'No KEEP (canonical) entry for this name in the same scope' }
     $canonicalPath = [System.IO.Path]::GetFullPath([string]$canonical.path)
     if (-not (Test-Path -LiteralPath $canonicalPath)) { return "Canonical copy is missing: $canonicalPath" }
     $mine = Get-PhysicalPath $ItemPath

@@ -174,6 +174,14 @@ class PowerShellHelperTests(SandboxMixin, unittest.TestCase):
                     self.assertEqual(plan["summary"]["actions"]["quarantineRemove"], 0, plan["plan"])
                     self.assertTrue(precious.is_file())
 
+    def test_dedupe_never_removes_a_copy_in_another_scope(self) -> None:
+        for exe in POWERSHELLS:
+            with self.subTest(powershell=exe):
+                home, project, env = self.make_home()
+                kept, duplicate = cross_scope_copies(self, home, project)
+                plan, _ = self.ps_dedupe(exe, home, project, env)
+                assert_cross_scope_dedupe(self, plan, kept, duplicate)
+
     def test_apply_rechecks_a_stale_plan_before_removing(self) -> None:
         for exe in POWERSHELLS:
             with self.subTest(powershell=exe):
@@ -245,6 +253,12 @@ class PythonHelperParityTests(SandboxMixin, unittest.TestCase):
                 plan = self.py_dedupe(home, cwd, env)
                 self.assertEqual(plan["summary"]["actions"]["quarantineRemove"], 0, plan["plan"])
                 self.assertTrue(precious.is_file())
+
+    def test_dedupe_never_removes_a_copy_in_another_scope(self) -> None:
+        home, project, env = self.make_home()
+        kept, duplicate = cross_scope_copies(self, home, project)
+        plan = self.py_dedupe(home, project, env)
+        assert_cross_scope_dedupe(self, plan, kept, duplicate)
 
     def test_apply_rechecks_a_stale_plan_before_removing(self) -> None:
         home, project, env = self.make_home()
@@ -422,11 +436,31 @@ ALIAS_SCENARIOS = {
 }
 
 
+def cross_scope_copies(case: SandboxMixin, home: Path, project: Path) -> tuple[list[Path], Path]:
+    """One skill as a project copy and two identical personal copies.
+
+    The project copy outranks the personal ones, but it serves a different
+    scope: only the second personal copy duplicates one in its own scope.
+    """
+    kept = [case.add_skill(project, ".claude/skills/demo"), case.add_skill(home, ".claude/skills/demo")]
+    return kept, case.add_skill(home, ".agents/skills/demo")
+
+
+def assert_cross_scope_dedupe(case: unittest.TestCase, plan: dict, kept: list[Path], duplicate: Path) -> None:
+    case.assertEqual(plan["summary"]["actions"]["quarantineRemove"], 1, plan["plan"])
+    canonical = [entry for entry in plan["plan"] if entry["action"] == "KEEP (canonical)"]
+    case.assertEqual([(entry["scope"], entry["provider"]) for entry in canonical], [("user", "claude-code")], plan["plan"])
+    case.assertFalse(any(entry["scope"] == "project" for entry in plan["plan"]), plan["plan"])
+    for copy in kept:
+        case.assertTrue((copy / "SKILL.md").is_file(), copy)
+    case.assertFalse(duplicate.exists())
+
+
 def stale_plan(case: SandboxMixin, home: Path) -> tuple[Path, list[Path]]:
     """A plan that is out of date or edited; apply must refuse every removal."""
 
-    def entry(name: str, path: Path, action: str) -> dict:
-        return {"id": 0, "name": name, "category": "x", "path": str(path), "provider": "legacy", "scope": "user",
+    def entry(name: str, path: Path, action: str, scope: str = "user") -> dict:
+        return {"id": 0, "name": name, "category": "x", "path": str(path), "provider": "legacy", "scope": scope,
                 "hash": "A", "action": action, "risk": "low", "isLink": False}
 
     plan = []
@@ -448,7 +482,11 @@ def stale_plan(case: SandboxMixin, home: Path) -> tuple[Path, list[Path]]:
         (folder / "scripts").mkdir()
         (folder / "scripts" / "a.py").write_text(text, encoding="utf-8")
     plan += [entry("edited", canonical, "KEEP (canonical)"), entry("edited", edited, "quarantine+remove")]
-    survivors += [orphan / "SKILL.md", gone / "SKILL.md", edited / "scripts" / "a.py"]
+    # An identical personal copy whose only canonical is a project copy: another scope.
+    project_copy = case.add_skill(home, "project/.claude/skills/scoped")
+    personal = case.add_skill(home, ".claude/skills/scoped")
+    plan += [entry("scoped", project_copy, "KEEP (canonical)", scope="project"), entry("scoped", personal, "quarantine+remove")]
+    survivors += [orphan / "SKILL.md", gone / "SKILL.md", edited / "scripts" / "a.py", personal / "SKILL.md"]
     plan_path = home / "stale-plan.json"
     plan_path.write_text(json.dumps({"plan": plan}), encoding="utf-8")
     return plan_path, survivors
@@ -471,19 +509,19 @@ def hashless_inventory() -> dict:
         return {"name": "demo", "type": "skill", "provider": provider, "scope": scope, "path": path,
                 "hash": hash_, "isLink": False, "linkTarget": None, "linkType": None, "hasManifest": False}
 
-    # The project copy outranks the user copy but has no SKILL.md to hash.
+    # The Claude copy outranks the others in its scope but has no SKILL.md to hash.
     return {"inventory": [
-        item("C:/project/.claude/skills/demo", "project", "claude-code", None),
-        item("C:/home/.claude/skills/demo", "user", "claude-code", "A"),
+        item("C:/home/.claude/skills/demo", "user", "claude-code", None),
+        item("C:/home/.codex/skills/demo", "user", "codex", "A"),
         item("C:/home/.agents/skills/demo", "user", "legacy", "A"),
     ]}
 
 
 def assert_hashless_plan(case: unittest.TestCase, plan: dict) -> None:
     by_path = {entry["path"]: entry for entry in plan["plan"]}
-    case.assertEqual(by_path["C:/project/.claude/skills/demo"]["category"], "unknown")
-    case.assertTrue(by_path["C:/project/.claude/skills/demo"]["action"].startswith("SKIP"))
-    case.assertEqual(by_path["C:/home/.claude/skills/demo"]["category"], "canonical")
+    case.assertEqual(by_path["C:/home/.claude/skills/demo"]["category"], "unknown")
+    case.assertTrue(by_path["C:/home/.claude/skills/demo"]["action"].startswith("SKIP"))
+    case.assertEqual(by_path["C:/home/.codex/skills/demo"]["category"], "canonical")
     case.assertEqual(by_path["C:/home/.agents/skills/demo"]["action"], "quarantine+remove")
     case.assertEqual(plan["summary"]["actions"]["quarantineRemove"], 1)
 

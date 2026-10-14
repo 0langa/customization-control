@@ -28,9 +28,13 @@ Remove duplicate customizations safely. Never delete without a plan. Never delet
 
 Read [dedupe-policy.json](../../references/dedupe-policy.json) for full policy.
 
+### Scopes
+
+Copies are compared only within one scope: project, user (personal), custom (additional roots), or cache. A project copy and a personal copy of the same name are never duplicates of each other, because each serves its own scope; both helpers keep each of them and plan removals only among copies in the same scope.
+
 ### Choosing canonical
 
-When multiple copies exist, prefer in this order:
+When multiple copies exist in one scope, prefer in this order:
 1. Repo-local source directory (e.g. `0langas-skill-center/muteman/`)
 2. User-wide provider skill dir (e.g. `~/.codex/skills/muteman/` if it's a symlink to #1)
 3. Legacy roots (e.g. `~/.agents/skills/muteman/`)
@@ -99,7 +103,7 @@ On Windows (`-Force` skips the helper's interactive prompt, which a non-interact
 powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_SKILL_DIR}/../../scripts/apply-dedupe.ps1" -PlanJson dedupe-plan.json -Force
 ```
 
-Both helpers quarantine before removing, write `quarantine-manifest.json`, and refuse paths outside the approved roots as well as symlinks and junctions. They also re-check each removal against the plan's canonical copy and report `BLOCKED` when the canonical is missing, is the same physical folder (for example through a link), or differs in any file. Report blocked entries to the user instead of removing them by hand. Never use string-built `rm` commands.
+Both helpers quarantine before removing, write `quarantine-manifest.json`, and refuse paths outside the approved roots as well as symlinks and junctions. They also re-check each removal against the plan's canonical copy in the same scope and report `BLOCKED` when there is none in that scope, when the canonical is missing, is the same physical folder (for example through a link), or differs in any file. Report blocked entries to the user instead of removing them by hand. Never use string-built `rm` commands.
 
 ## Post-removal validation
 
@@ -112,6 +116,7 @@ Report any issues found during validation.
 
 ## Safety
 
+- Never delete a copy because a copy in another scope exists (for example a personal copy because of a project copy).
 - Never delete `canonical` or `provider-link` entries.
 - Never delete `conflict` or `unknown` entries.
 - Always quarantine before removing `duplicate-copy` entries.

@@ -109,6 +109,8 @@ The unittest suite also drives the PowerShell helpers end to end against a tempo
 
 ## Dedupe categories
 
+Copies are compared only within one scope (project, user, custom, or cache). A personal copy and a project copy of the same name are never duplicates of each other, so dedupe keeps both.
+
 | Category | Meaning | Auto-action |
 |---|---|---|
 | `canonical` | Source of truth | Keep |
