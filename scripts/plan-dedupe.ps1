@@ -16,6 +16,15 @@ param(
     [string]$OutputFormat = 'json'
 )
 
+# Windows PowerShell 5.1 started from PowerShell 7 through cmd, bash or an agent
+# inherits PowerShell 7's module folders, autoloads PowerShell 7's core modules
+# and loses Get-FileHash. Drop those folders (...\PowerShell\... and the Store
+# app's ...\WindowsApps\Microsoft.PowerShell_*); keep every other entry.
+if ($PSVersionTable.PSEdition -eq 'Desktop' -and $env:PSModulePath) {
+    $powerShell7Folder = '[\\/]PowerShell[\\/]|[\\/]WindowsApps[\\/]Microsoft\.PowerShell'
+    $env:PSModulePath = (($env:PSModulePath -split ';') -notmatch $powerShell7Folder) -join ';'
+}
+
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
