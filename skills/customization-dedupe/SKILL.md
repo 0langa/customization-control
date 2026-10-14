@@ -54,7 +54,16 @@ python3 "${CLAUDE_SKILL_DIR}/../../scripts/customization_control.py" plan-dedupe
 
 On Windows, use the PowerShell helpers:
 
-!`powershell -NoProfile -Command "Get-FileHash -Algorithm SHA256 -Path $args[0]" "$ARGUMENTS"`
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_SKILL_DIR}/../../scripts/inventory.ps1" -OutputFormat json > inventory.json
+powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_SKILL_DIR}/../../scripts/plan-dedupe.ps1" -InventoryJson inventory.json -OutputFormat json > dedupe-plan.json
+```
+
+To hash one file by hand, pass its resolved absolute path:
+
+```powershell
+Get-FileHash -Algorithm SHA256 -LiteralPath "<absolute path to SKILL.md>"
+```
 
 Identical hashes → `duplicate-copy`. Different hashes → `conflict`.
 
@@ -78,7 +87,19 @@ For each confirmed removal:
 3. Write entry to `quarantine-manifest.json` with original path, hash, timestamp, reason.
 4. Remove the original.
 
-On WSL, Linux, and macOS, use `python3 scripts/customization_control.py apply-dedupe dedupe-plan.json`. On Windows, use PowerShell `Copy-Item` and `Remove-Item` with resolved absolute paths. Never use string-built `rm` commands.
+Run the helper only after the user has confirmed the dry-run plan. On WSL, Linux, and macOS:
+
+```bash
+python3 "${CLAUDE_SKILL_DIR}/../../scripts/customization_control.py" apply-dedupe dedupe-plan.json
+```
+
+On Windows (`-Force` skips the helper's interactive prompt, which a non-interactive shell cannot answer):
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_SKILL_DIR}/../../scripts/apply-dedupe.ps1" -PlanJson dedupe-plan.json -Force
+```
+
+Both helpers quarantine before removing, write `quarantine-manifest.json`, and refuse paths outside the approved roots as well as symlinks and junctions. They also re-check each removal against the plan's canonical copy and report `BLOCKED` when the canonical is missing, is the same physical folder (for example through a link), or differs in any file. Report blocked entries to the user instead of removing them by hand. Never use string-built `rm` commands.
 
 ## Post-removal validation
 

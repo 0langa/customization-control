@@ -45,7 +45,9 @@ python3 "${CLAUDE_SKILL_DIR}/../../scripts/customization_control.py" inventory -
 
 On Windows, use the PowerShell helper:
 
-!`powershell -NoProfile -File "${CLAUDE_SKILL_DIR}/../../scripts/inventory.ps1" -OutputFormat json`
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_SKILL_DIR}/../../scripts/inventory.ps1" -OutputFormat json
+```
 
 If the platform-specific helper is unavailable, perform manual inventory by scanning each root from [known-roots.json](../../references/known-roots.json).
 

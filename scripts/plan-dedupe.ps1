@@ -62,19 +62,104 @@ function Get-Priority {
     return $sp * 10 + $pp
 }
 
+function Get-PhysicalPath {
+    # The final location of a path once every symlink, junction and mount point
+    # along it is followed, or $null when it cannot be determined.
+    param([string]$Path)
+    if (-not ('CustomizationControl.PhysicalPath' -as [type])) {
+        try {
+            Add-Type -Namespace CustomizationControl -Name PhysicalPath -MemberDefinition @'
+[System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
+public static extern Microsoft.Win32.SafeHandles.SafeFileHandle CreateFileW(string name, uint access, uint share, System.IntPtr security, uint disposition, uint flags, System.IntPtr template);
+[System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
+public static extern uint GetFinalPathNameByHandleW(Microsoft.Win32.SafeHandles.SafeFileHandle handle, System.Text.StringBuilder buffer, uint size, uint flags);
+'@
+        } catch {
+            return $null
+        }
+    }
+    try {
+        $full = [System.IO.Path]::GetFullPath($Path)
+    } catch {
+        return $null
+    }
+    # 0x80 FILE_READ_ATTRIBUTES, 7 share read/write/delete, 3 OPEN_EXISTING,
+    # 0x02000000 FILE_FLAG_BACKUP_SEMANTICS (needed to open a directory).
+    try {
+        $handle = [CustomizationControl.PhysicalPath]::CreateFileW($full, 0x80, 7, [System.IntPtr]::Zero, 3, 0x02000000, [System.IntPtr]::Zero)
+    } catch {
+        # No kernel32 (PowerShell 7 off Windows): treat as unknown.
+        return $null
+    }
+    try {
+        if ($handle.IsInvalid) { return $null }
+        $buffer = New-Object System.Text.StringBuilder 32768
+        $length = [CustomizationControl.PhysicalPath]::GetFinalPathNameByHandleW($handle, $buffer, 32768, 0)
+        if ($length -eq 0 -or $length -ge 32768) { return $null }
+        $final = $buffer.ToString()
+        if ($final.StartsWith('\\?\UNC\')) { return '\\' + $final.Substring(8) }
+        if ($final.StartsWith('\\?\')) { return $final.Substring(4) }
+        return $final
+    } finally {
+        $handle.Dispose()
+    }
+}
+
+function Test-PathOverlap {
+    # True when the paths are equal or one lies inside the other.
+    param([string]$First, [string]$Second)
+    $comparison = [System.StringComparison]::OrdinalIgnoreCase
+    $a = $First.TrimEnd('\', '/') + '\'
+    $b = $Second.TrimEnd('\', '/') + '\'
+    return $a.StartsWith($b, $comparison) -or $b.StartsWith($a, $comparison)
+}
+
+# Entries that resolve to the same place (a link and its target, a path through
+# a linked parent folder, or a project root that is the user root because the
+# helper runs from home) are one copy: removing either deletes both.
+$inventory = @($inventory | Where-Object { $null -ne $_ })
+$physicalPaths = @{}
+for ($index = 0; $index -lt $inventory.Count; $index++) {
+    $inventory[$index] | Add-Member -NotePropertyName inventoryIndex -NotePropertyValue $index -Force
+    $entryPath = [string]$inventory[$index].path
+    $physicalPaths[$index] = if (-not $entryPath) {
+        $null
+    } elseif (Test-Path -LiteralPath $entryPath) {
+        Get-PhysicalPath $entryPath
+    } else {
+        # Gone since the inventory ran: nothing on disk to share, compare as written.
+        [System.IO.Path]::GetFullPath($entryPath)
+    }
+}
+
+function Test-SharesCopy {
+    # $true when another inventory entry is physically the same copy as $Item
+    # (or contains it, or lies inside it); $null when that cannot be told.
+    param($Item)
+    $mine = $physicalPaths[$Item.inventoryIndex]
+    if (-not $mine) { return $null }
+    foreach ($other in $inventory) {
+        if ($other.inventoryIndex -eq $Item.inventoryIndex) { continue }
+        $theirs = $physicalPaths[$other.inventoryIndex]
+        if ($theirs -and (Test-PathOverlap $mine $theirs)) { return $true }
+    }
+    return $false
+}
+
 # Group by name and find duplicates
-$nameGroups = $inventory | Group-Object -Property name | Where-Object { $_.Count -gt 1 }
+# @() keeps one-element results countable under Set-StrictMode -Version Latest.
+$nameGroups = @($inventory | Group-Object -Property name | Where-Object { $_.Count -gt 1 })
 
 $plan = @()
 $planId = 0
 
 foreach ($group in $nameGroups) {
     $items = $group.Group
-    $hashes = $items | Where-Object { $_.hash } | Select-Object -ExpandProperty hash -Unique
+    $hashes = @($items | Where-Object { $_.hash } | Select-Object -ExpandProperty hash -Unique)
     $isConflict = ($hashes.Count -gt 1)
 
     if ($isConflict) {
-        # Different content — conflict, report only
+        # Different content - conflict, report only
         foreach ($item in $items) {
             $planId++
             $plan += [ordered]@{
@@ -85,16 +170,37 @@ foreach ($group in $nameGroups) {
                 provider  = $item.provider
                 scope     = $item.scope
                 hash      = $item.hash
-                action    = 'SKIP (conflict — different content)'
+                action    = 'SKIP (conflict - different content)'
                 risk      = 'n/a'
                 isLink    = $item.isLink
             }
         }
     } else {
-        # Same content — pick canonical, mark rest as duplicate-copy
-        $sorted = $items | Sort-Object { Get-Priority $_ }
+        # Same content - pick canonical, mark rest as duplicate-copy.
+        # A copy without a content hash cannot be shown identical to the
+        # others, so it is never canonical and never removed.
+        foreach ($item in @($items | Where-Object { -not $_.hash -and -not $_.isLink })) {
+            $planId++
+            $plan += [ordered]@{
+                id        = $planId
+                name      = $item.name
+                category  = 'unknown'
+                path      = $item.path
+                provider  = $item.provider
+                scope     = $item.scope
+                hash      = $item.hash
+                action    = 'SKIP (no content hash to compare)'
+                risk      = 'n/a'
+                isLink    = $item.isLink
+            }
+        }
+
+        $sorted = @($items | Where-Object { $_.hash -or $_.isLink } | Sort-Object { Get-Priority $_ })
+        if ($sorted.Count -eq 0) {
+            continue
+        }
         $canonical = $sorted[0]
-        $duplicates = $sorted[1..($sorted.Count - 1)]
+        $duplicates = @(if ($sorted.Count -gt 1) { $sorted[1..($sorted.Count - 1)] })
 
         $planId++
         $plan += [ordered]@{
@@ -116,9 +222,19 @@ foreach ($group in $nameGroups) {
             $action = 'quarantine+remove'
             $risk = 'low'
 
+            $shared = if ($dup.isLink) { $false } else { Test-SharesCopy $dup }
+
             if ($dup.isLink) {
                 $category = 'provider-link'
                 $action = 'KEEP (provider link)'
+                $risk = 'none'
+            } elseif ($null -eq $shared) {
+                $category = 'unknown'
+                $action = 'SKIP (cannot resolve the physical path)'
+                $risk = 'n/a'
+            } elseif ($shared) {
+                $category = 'canonical'
+                $action = 'KEEP (same physical copy)'
                 $risk = 'none'
             } elseif ($dup.type -eq 'cached-plugin') {
                 $category = 'stale-cache'
@@ -147,10 +263,10 @@ $planSummary = [ordered]@{
     totalEntries    = $plan.Count
     duplicateGroups = $nameGroups.Count
     actions         = @{
-        keep              = ($plan | Where-Object { $_.action -like 'KEEP*' }).Count
-        quarantineRemove  = ($plan | Where-Object { $_.action -eq 'quarantine+remove' }).Count
-        removeRebuildable = ($plan | Where-Object { $_.action -eq 'remove (rebuildable)' }).Count
-        skipConflict      = ($plan | Where-Object { $_.action -like 'SKIP*' }).Count
+        keep              = @($plan | Where-Object { $_.action -like 'KEEP*' }).Count
+        quarantineRemove  = @($plan | Where-Object { $_.action -eq 'quarantine+remove' }).Count
+        removeRebuildable = @($plan | Where-Object { $_.action -eq 'remove (rebuildable)' }).Count
+        skipConflict      = @($plan | Where-Object { $_.action -like 'SKIP*' }).Count
     }
     isDryRun = $true
 }

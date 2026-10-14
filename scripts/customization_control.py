@@ -13,6 +13,7 @@ import hashlib
 import json
 import os
 import shutil
+import stat
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -92,6 +93,91 @@ def approved_roots() -> list[Path]:
         resolve_path(".kimi-code"),
         resolve_path(".customization-control"),
     ]
+
+
+def path_strictly_in_roots(path: Path, roots: list[Path]) -> bool:
+    resolved = os.path.normcase(str(resolve_path(path)))
+    return path_in_roots(path, roots) and all(resolved != os.path.normcase(str(root)) for root in roots)
+
+
+def is_link_or_junction(path: Path) -> bool:
+    if path.is_symlink():
+        return True
+    is_junction = getattr(os.path, "isjunction", None)
+    if is_junction and is_junction(path):
+        return True
+    # os.path.isjunction is new in Python 3.12; before that a junction is only
+    # visible as a reparse point.
+    try:
+        attributes = getattr(os.lstat(path), "st_file_attributes", 0)
+    except OSError:
+        return False
+    return bool(attributes & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0))
+
+
+def physical_path(path_text: str) -> str | None:
+    """Where an item really lives once every link along its path is followed."""
+    try:
+        return os.path.normcase(os.path.realpath(os.path.expanduser(path_text)))
+    except (OSError, ValueError):
+        return None
+
+
+def paths_overlap(first: str, second: str) -> bool:
+    """True when the paths are equal or one lies inside the other."""
+    first_dir = first.rstrip("\\/") + os.sep
+    second_dir = second.rstrip("\\/") + os.sep
+    return first_dir.startswith(second_dir) or second_dir.startswith(first_dir)
+
+
+def tree_digest(path: Path) -> str | None:
+    """SHA-256 over the relative name and content of every file below path.
+
+    Links inside the tree are recorded by their target instead of followed.
+    Returns None when something cannot be read.
+    """
+    try:
+        if path.is_file():
+            return file_hash(path)
+        digest = hashlib.sha256()
+        pending = [Path()]
+        while pending:
+            relative = pending.pop()
+            with os.scandir(path / relative) as entries:
+                for child_entry in sorted(entries, key=lambda item: item.name):
+                    child = relative / child_entry.name
+                    full = path / child
+                    if is_link_or_junction(full):
+                        digest.update(f"L {child.as_posix()} {os.readlink(full)}\n".encode("utf-8"))
+                    elif child_entry.is_dir():
+                        pending.append(child)
+                    else:
+                        digest.update(f"F {child.as_posix()} {file_hash(full)}\n".encode("utf-8"))
+        return digest.hexdigest()
+    except OSError:
+        return None
+
+
+def unique_path(base: Path, name: str) -> Path:
+    candidate = base / name
+    counter = 2
+    while candidate.exists() or candidate.is_symlink():
+        candidate = base / f"{name}-{counter}"
+        counter += 1
+    return candidate
+
+
+def read_json(path: Path) -> Any:
+    # utf-8-sig: Windows PowerShell 5.1 writes UTF-8 files with a BOM.
+    return json.loads(path.read_text(encoding="utf-8-sig"))
+
+
+def read_manifest(path: Path) -> list[dict[str, Any]]:
+    if not path.is_file():
+        return []
+    data = read_json(path)
+    # Older PowerShell helpers wrote a one-entry manifest as a bare object.
+    return [data] if isinstance(data, dict) else list(data or [])
 
 
 def file_hash(path: Path) -> str | None:
@@ -345,7 +431,7 @@ def inventory_command(args: argparse.Namespace) -> int:
 
 def load_inventory(path_text: str | None) -> list[dict[str, Any]]:
     if path_text:
-        data = json.loads(Path(path_text).read_text(encoding="utf-8"))
+        data = read_json(Path(path_text))
     else:
         data = build_inventory()
     return list(data.get("inventory", []))
@@ -417,6 +503,20 @@ def plan_from_inventory(inventory: list[dict[str, Any]]) -> dict[str, Any]:
     by_name: dict[str, list[dict[str, Any]]] = {}
     for item in inventory:
         by_name.setdefault(item["name"], []).append(item)
+    # Entries that resolve to the same place (a link and its target, a path
+    # through a linked parent folder, or a project root that is the user root
+    # because the helper runs from home) are one copy: removing either deletes both.
+    physical = {id(item): physical_path(str(item["path"])) for item in inventory}
+
+    def shares_copy(item: dict[str, Any]) -> bool | None:
+        mine = physical[id(item)]
+        if mine is None:
+            return None
+        return any(
+            other is not item and physical[id(other)] is not None and paths_overlap(mine, physical[id(other)] or "")
+            for other in inventory
+        )
+
     plan = []
     plan_id = 0
     for _, items in sorted(by_name.items()):
@@ -428,14 +528,30 @@ def plan_from_inventory(inventory: list[dict[str, Any]]) -> dict[str, Any]:
                 plan_id += 1
                 plan.append(plan_entry(plan_id, item, "conflict", "SKIP (conflict - different content)", "n/a"))
             continue
-        sorted_items = sorted(items, key=priority)
+        # A copy without a content hash cannot be shown identical to the others,
+        # so it is never canonical and never removed.
+        unhashed: list[dict[str, Any]] = []
+        comparable: list[dict[str, Any]] = []
+        for item in items:
+            (comparable if item.get("hash") or item.get("isLink") else unhashed).append(item)
+        sorted_items = sorted(comparable, key=priority)
+        for item in unhashed:
+            plan_id += 1
+            plan.append(plan_entry(plan_id, item, "unknown", "SKIP (no content hash to compare)", "n/a"))
+        if not sorted_items:
+            continue
         canonical = sorted_items[0]
         plan_id += 1
         plan.append(plan_entry(plan_id, canonical, "provider-link" if canonical.get("isLink") else "canonical", "KEEP (canonical)", "none"))
         for item in sorted_items[1:]:
             plan_id += 1
+            shared = None if item.get("isLink") else shares_copy(item)
             if item.get("isLink"):
                 plan.append(plan_entry(plan_id, item, "provider-link", "KEEP (provider link)", "none"))
+            elif shared is None:
+                plan.append(plan_entry(plan_id, item, "unknown", "SKIP (cannot resolve the physical path)", "n/a"))
+            elif shared:
+                plan.append(plan_entry(plan_id, item, "canonical", "KEEP (same physical copy)", "none"))
             elif item.get("type") == "cached-plugin":
                 plan.append(plan_entry(plan_id, item, "stale-cache", "remove (rebuildable)", "low"))
             else:
@@ -480,36 +596,75 @@ def plan_command(args: argparse.Namespace) -> int:
 
 
 def load_plan(path_text: str) -> list[dict[str, Any]]:
-    return list(json.loads(Path(path_text).read_text(encoding="utf-8")).get("plan", []))
+    return list(read_json(Path(path_text)).get("plan", []))
+
+
+def removal_conflict(item: dict[str, Any], plan: list[dict[str, Any]]) -> str | None:
+    """Why removing a plan entry could lose data, or None for a safe duplicate.
+
+    Re-checked at apply time because the plan may be stale or edited: the
+    canonical copy must still exist, the entry must not be the same physical
+    copy as anything the plan keeps, and a duplicate-copy must match the
+    canonical file for file (the plan only compared SKILL.md or plugin.json).
+    """
+    canonical = next((entry for entry in plan if entry.get("name") == item["name"] and entry.get("action") == "KEEP (canonical)"), None)
+    if canonical is None:
+        return "No KEEP (canonical) entry for this name in the plan"
+    canonical_path = Path(str(canonical["path"])).expanduser()
+    if not canonical_path.exists():
+        return f"Canonical copy is missing: {canonical['path']}"
+    mine = physical_path(str(item["path"]))
+    if mine is None:
+        return f"Cannot resolve the physical path of {item['path']}"
+    for kept in plan:
+        if not str(kept.get("action", "")).startswith("KEEP"):
+            continue
+        theirs = physical_path(str(kept["path"]))
+        if theirs is not None and paths_overlap(mine, theirs):
+            return f"Same physical copy as kept entry {kept['path']}"
+    if item.get("action") == "quarantine+remove":
+        digest = tree_digest(Path(str(item["path"])).expanduser())
+        if digest is None or digest != tree_digest(canonical_path):
+            return f"Content differs from the canonical copy {canonical['path']}"
+    return None
 
 
 def apply_command(args: argparse.Namespace) -> int:
-    removals = [item for item in load_plan(args.plan_json) if item["action"] in {"quarantine+remove", "remove (rebuildable)"}]
+    plan = load_plan(args.plan_json)
+    removals = [item for item in plan if item["action"] in {"quarantine+remove", "remove (rebuildable)"}]
     roots = approved_roots()
     quarantine_base = resolve_path(args.quarantine_root)
     manifest_path = quarantine_base / "quarantine-manifest.json"
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.is_file() else []
+    manifest = read_manifest(manifest_path)
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     results = []
     for item in removals:
+        raw_path = Path(item["path"]).expanduser().absolute()
         item_path = resolve_path(item["path"])
         result = {"name": item["name"], "path": str(item_path), "status": "pending", "error": None}
-        if not path_in_roots(item_path, roots):
+        if not path_strictly_in_roots(item_path, roots):
             result.update(status="BLOCKED", error=f"Path outside approved roots: {item_path}")
+        elif is_link_or_junction(raw_path):
+            # resolve() follows links, so removing "the item" would delete the link target.
+            result.update(status="BLOCKED", error=f"Refusing to remove a symlink or junction: {raw_path}")
         elif not item_path.exists() and not item_path.is_symlink():
             result.update(status="skipped", error="Path does not exist")
+        elif (conflict := removal_conflict(item, plan)) is not None:
+            result.update(status="BLOCKED", error=conflict)
         elif args.dry_run:
             result["status"] = "dry-run"
         else:
             try:
                 quarantine_base.mkdir(parents=True, exist_ok=True)
-                dest = quarantine_base / f"{timestamp}_{item['name']}"
-                if item_path.is_dir() and not item_path.is_symlink():
+                # Copies of one name share the timestamp; give each its own folder.
+                dest = unique_path(quarantine_base, f"{timestamp}_{item['name']}")
+                is_dir = item_path.is_dir() and not item_path.is_symlink()
+                if is_dir:
                     shutil.copytree(item_path, dest)
-                    shutil.rmtree(item_path)
                 else:
                     shutil.copy2(item_path, dest)
-                    item_path.unlink()
+                # Record the copy before deleting anything, so a removal that
+                # fails half way still leaves a restorable manifest entry.
                 manifest.append(
                     {
                         "name": item["name"],
@@ -521,6 +676,10 @@ def apply_command(args: argparse.Namespace) -> int:
                         "reason": f"Dedupe: {item['action']}",
                     }
                 )
+                if is_dir:
+                    shutil.rmtree(item_path)
+                else:
+                    item_path.unlink()
                 result["status"] = "removed"
             except Exception as exc:
                 result.update(status="error", error=str(exc))
@@ -547,7 +706,7 @@ def apply_command(args: argparse.Namespace) -> int:
 def quarantine_command(args: argparse.Namespace) -> int:
     base = resolve_path(args.quarantine_root)
     manifest_path = base / "quarantine-manifest.json"
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.is_file() else []
+    manifest = read_manifest(manifest_path)
     if args.action == "list":
         payload = {"total": len(manifest), "entries": manifest}
     else:

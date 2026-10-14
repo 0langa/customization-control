@@ -33,9 +33,13 @@ $approvedRootPaths = @(
 
 function Test-InApprovedRoot {
     param([string]$Path)
-    $resolved = [System.IO.Path]::GetFullPath($Path)
+    # Match the root itself or a child of it, never a sibling that merely
+    # shares its prefix (e.g. ~/.claude-backup).
+    $resolved = [System.IO.Path]::GetFullPath($Path).TrimEnd('\', '/')
     foreach ($root in $approvedRootPaths) {
-        if ($resolved.StartsWith($root, [System.StringComparison]::OrdinalIgnoreCase)) {
+        $rootPath = $root.TrimEnd('\', '/')
+        if ($resolved.Equals($rootPath, [System.StringComparison]::OrdinalIgnoreCase) -or
+            $resolved.StartsWith($rootPath + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase)) {
             return $true
         }
     }
@@ -116,9 +120,9 @@ foreach ($item in $inventory) {
     }
 
     # Check path exists
-    if (-not (Test-Path $item.path -ErrorAction SilentlyContinue)) {
+    if (-not (Test-Path -LiteralPath $item.path -ErrorAction SilentlyContinue)) {
         $itemObj = $null
-        try { $itemObj = Get-Item $item.path -Force -ErrorAction SilentlyContinue } catch {}
+        try { $itemObj = Get-Item -LiteralPath $item.path -Force -ErrorAction SilentlyContinue } catch {}
         if (-not $itemObj) {
             $result.issues += "Path does not exist"
             $result.status = 'missing'
@@ -127,7 +131,7 @@ foreach ($item in $inventory) {
 
     # Check symlink target
     if ($item.isLink -and $item.linkTarget) {
-        if (-not (Test-Path $item.linkTarget -ErrorAction SilentlyContinue)) {
+        if (-not (Test-Path -LiteralPath $item.linkTarget -ErrorAction SilentlyContinue)) {
             $result.issues += "Symlink target does not exist: $($item.linkTarget)"
             $result.status = 'broken-link'
         }
@@ -144,16 +148,15 @@ foreach ($item in $inventory) {
     # Validate skill manifest
     if ($item.type -eq 'skill' -or $item.type -eq 'skill-plugin') {
         $skillMd = Join-Path $item.path 'SKILL.md'
-        $skillIssues = Test-SkillManifest $skillMd
-        $result.issues += $skillIssues
+        # @() so a function that returns nothing adds no $null issue.
+        $result.issues += @(Test-SkillManifest $skillMd)
     }
 
     # Validate plugin manifest
     if ($item.hasManifest -and $item.type -eq 'skill-plugin') {
         $pluginJson = Join-Path (Join-Path $item.path '.claude-plugin') 'plugin.json'
         if (Test-Path $pluginJson) {
-            $pluginIssues = Test-PluginManifest $pluginJson
-            $result.issues += $pluginIssues
+            $result.issues += @(Test-PluginManifest $pluginJson)
         }
     }
 
@@ -167,14 +170,18 @@ foreach ($item in $inventory) {
 $validSummary = [ordered]@{
     timestamp  = (Get-Date -Format 'o')
     total      = $validationResults.Count
-    valid      = ($validationResults | Where-Object { $_.status -eq 'valid' }).Count
-    warnings   = ($validationResults | Where-Object { $_.status -eq 'warning' }).Count
-    errors     = ($validationResults | Where-Object { $_.status -notin @('valid', 'warning') }).Count
+    valid      = @($validationResults | Where-Object { $_.status -eq 'valid' }).Count
+    warnings   = @($validationResults | Where-Object { $_.status -eq 'warning' }).Count
+    errors     = @($validationResults | Where-Object { $_.status -notin @('valid', 'warning') }).Count
     byStatus   = @{}
 }
 
-$validationResults | Group-Object status | ForEach-Object {
-    $validSummary.byStatus[$_.Name] = $_.Count
+# Count by hand: Group-Object cannot read keys of the ordered dictionaries
+# above and would put every result under an empty status.
+foreach ($validationResult in $validationResults) {
+    $status = $validationResult.status
+    if (-not $validSummary.byStatus.ContainsKey($status)) { $validSummary.byStatus[$status] = 0 }
+    $validSummary.byStatus[$status]++
 }
 
 $output = [ordered]@{
