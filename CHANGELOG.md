@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.7 - 2026-10-14
+
+- The Windows helpers now work when Windows PowerShell 5.1 is started from a PowerShell 7 session through cmd, bash or an agent. Before, 5.1 picked up PowerShell 7's modules, so inventory failed on `Get-FileHash` and apply blocked every removal.
+
 ## 0.1.6 - 2026-10-14
 
 - The audit and dedupe skills no longer run PowerShell while loading, so they load on every platform.
