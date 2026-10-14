@@ -85,7 +85,12 @@ public static extern uint GetFinalPathNameByHandleW(Microsoft.Win32.SafeHandles.
     }
     # 0x80 FILE_READ_ATTRIBUTES, 7 share read/write/delete, 3 OPEN_EXISTING,
     # 0x02000000 FILE_FLAG_BACKUP_SEMANTICS (needed to open a directory).
-    $handle = [CustomizationControl.PhysicalPath]::CreateFileW($full, 0x80, 7, [System.IntPtr]::Zero, 3, 0x02000000, [System.IntPtr]::Zero)
+    try {
+        $handle = [CustomizationControl.PhysicalPath]::CreateFileW($full, 0x80, 7, [System.IntPtr]::Zero, 3, 0x02000000, [System.IntPtr]::Zero)
+    } catch {
+        # No kernel32 (PowerShell 7 off Windows): treat as unknown.
+        return $null
+    }
     try {
         if ($handle.IsInvalid) { return $null }
         $buffer = New-Object System.Text.StringBuilder 32768
