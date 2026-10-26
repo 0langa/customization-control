@@ -1,6 +1,6 @@
 {
   "name": "customization-control",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "description": "Dormant: Find duplicate customizations and repair local agent configuration.",
   "author": {
     "name": "0langa"
