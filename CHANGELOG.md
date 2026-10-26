@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.9 - 2026-10-26
+
+- Mark the plugin dormant while keeping existing functionality and installation IDs.
+- Publish through https://github.com/0langa/plugins; Kimi compatibility is legacy.
+
 ## 0.1.8 - 2026-10-15
 
 - Dedupe now compares copies only within one scope (project, personal, custom or cache). A personal copy such as `~/.claude/skills/<name>` and a project copy of the same name are never duplicates of each other, so dedupe keeps both. Before, the project copy was kept and the personal copy was removed.

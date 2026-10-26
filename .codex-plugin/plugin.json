@@ -1,7 +1,7 @@
 {
   "name": "customization-control",
-  "version": "0.1.8",
-  "description": "Audit, deduplicate, repair, sync, and manage agent customizations across Codex, Claude Code, and Kimi Code.",
+  "version": "0.1.9",
+  "description": "Dormant: Find duplicate customizations and repair local agent configuration.",
   "author": {
     "name": "0langa"
   },
@@ -24,8 +24,8 @@
   "skills": "./skills/",
   "interface": {
     "displayName": "Customization Control",
-    "shortDescription": "Audit, dedupe, repair, and sync agent customizations.",
-    "longDescription": "Cross-provider plugin that inventories, deduplicates, repairs, syncs, and manages agent customizations across Codex, Claude Code, and Kimi Code. Keeps the @ picker clean and customization roots consistent.",
+    "shortDescription": "Dormant: Find duplicate customizations and repair local agent configuration.",
+    "longDescription": "Dormant: Find duplicate customizations and repair local agent configuration. Available as-is, with no planned updates. Kimi compatibility is legacy.",
     "developerName": "0langa",
     "category": "Coding",
     "capabilities": [

@@ -1,5 +1,8 @@
 # customization-control
 
+> **Dormant:** Available as-is, with no planned updates. This plugin is no longer part of my maintained workflow. Existing releases remain installable.
+> Kimi compatibility is legacy and is not actively tested.
+
 Cross-provider plugin that audits, deduplicates, repairs, syncs, and manages agent customizations across Codex, Claude Code, and Kimi Code.
 
 ## Problem
